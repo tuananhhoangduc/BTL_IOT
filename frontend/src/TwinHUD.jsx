@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -9,27 +9,33 @@ import {
   Thermometer,
   Droplets,
   Sun,
-  RotateCw,
+  Sliders,
+  ChevronLeft,
+  ChevronRight,
   Compass,
   Eye,
-  Sliders,
   Tv,
-  Utensils
+  Bed,
+  Utensils,
+  Flower2,
+  RotateCw
 } from 'lucide-react';
 
 export default function TwinHUD({
   twinData,
   onToggle,
-  cameraMode,
-  setCameraMode,
+  viewMode,
+  setViewMode,
   autoRotate,
   setAutoRotate
 }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   const reported = twinData.reported || {};
   const mismatch = twinData.mismatch || {};
   const healthScore = twinData.health_score !== undefined ? twinData.health_score : 100;
 
-  // Danh mục 5 thiết bị Smart Home điều khiển hai chiều RPC
+  // Danh mục 6 thiết bị Smart Home điều khiển hai chiều RPC
   const smartDevices = [
     {
       id: 'living',
@@ -57,10 +63,10 @@ export default function TwinHUD({
     },
     {
       id: 'fan',
-      label: 'Quạt treo tường bếp',
-      room: 'Hệ thống quạt thông minh gắn tường',
+      label: 'Quạt hút mùi bếp (PWM)',
+      room: 'Điều tốc MOSFET 3 cấp',
       method: 'setFan',
-      isLit: reported.fan_kitchen === 1,
+      isLit: reported.fan_kitchen === 1 || (reported.fan_speed && reported.fan_speed > 0),
       type: 'fan'
     },
     {
@@ -81,31 +87,113 @@ export default function TwinHUD({
     }
   ];
 
+  const getRoomDisplayName = () => {
+    switch (viewMode) {
+      case 'living':
+        return 'PHÒNG KHÁCH';
+      case 'bedroom':
+        return 'PHÒNG NGỦ';
+      case 'kitchen':
+        return 'PHÒNG BẾP';
+      case 'balcony':
+        return 'BAN CÔNG';
+      default:
+        return '';
+    }
+  };
+
+  const isRoomMode = ['living', 'bedroom', 'kitchen', 'balcony'].includes(viewMode);
+
   return (
     <>
-      {/* 1. BANNER CẢNH BÁO SAI LỆCH VẬT LÝ MISMATCH PHÍA TRÊN */}
-      {mismatch.detected && (
-        <div style={styles.topAlertBanner}>
-          <div style={styles.alertContent}>
-            <AlertTriangle size={20} color="#f87171" style={{ animation: 'pulse 1s infinite' }} />
+      {/* 1. NÚT ĐÓNG / MỞ BẢNG ĐIỀU KHIỂN GÓC TRÁI (TOP-LEFT COLLAPSIBLE BUTTON) */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        style={{
+          ...styles.collapseBtn,
+          left: isCollapsed ? '20px' : '385px'
+        }}
+        title={isCollapsed ? 'Mở bảng điều khiển' : 'Thu gọn bảng điều khiển'}
+      >
+        {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        <span>{isCollapsed ? 'Mở bảng điều khiển' : 'Thu gọn bảng'}</span>
+      </button>
+
+      {/* 2. THANH TRẠNG THÁI GÓC NHÌN ĐỈNH TRANG (TOP-CENTER STATUS PILL - GIỐNG ẢNH MẪU) */}
+      <div style={styles.topStatusPillContainer}>
+        <div style={styles.topStatusPill}>
+          {isRoomMode ? (
+            <>
+              <div style={styles.topStatusPillLeft}>
+                <span style={{ fontSize: '14px', color: '#f59e0b' }}>🚶</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Đang đứng trong: <b style={{ color: '#38bdf8', fontWeight: 800 }}>{getRoomDisplayName()}</b>
+                </span>
+              </div>
+              <div style={styles.topStatusPillDivider} />
+              <div style={styles.topStatusPillRight}>
+                <div>• Kéo chuột để quay đầu 360° quanh phòng •</div>
+                <div>• Nhấn nút ở cửa để đi sang phòng khác</div>
+              </div>
+            </>
+          ) : viewMode === 'top' ? (
+            <>
+              <div style={styles.topStatusPillLeft}>
+                <span style={{ fontSize: '14px' }}>📐</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Chế độ: <b style={{ color: '#38bdf8', fontWeight: 800 }}>MẶT BẰNG 2D</b>
+                </span>
+              </div>
+              <div style={styles.topStatusPillDivider} />
+              <div style={styles.topStatusPillRight}>
+                <div>• Góc nhìn mặt cắt vuông góc từ trên cao xuống •</div>
+                <div>• Chọn phòng ở thanh điều hướng bên dưới để vào phòng</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.topStatusPillLeft}>
+                <span style={{ fontSize: '14px' }}>🌐</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                  Chế độ: <b style={{ color: '#38bdf8', fontWeight: 800 }}>TOÀN CẢNH 3D</b>
+                </span>
+              </div>
+              <div style={styles.topStatusPillDivider} />
+              <div style={styles.topStatusPillRight}>
+                <div>• Nhấp 'Vào phòng' hoặc dùng thanh điều hướng bên dưới •</div>
+                <div>• Kéo chuột để xoay toàn cảnh, cuộn để zoom</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* CẢNH BÁO SAI LỆCH VẬT LÝ MISMATCH */}
+        {mismatch.detected && (
+          <div style={styles.topAlertBanner}>
+            <AlertTriangle size={17} color="#f87171" style={{ animation: 'pulse 1s infinite' }} />
             <span>
-              <b>CẢNH BÁO SAI LỆCH (ACTUATOR MISMATCH):</b> Trạng thái công tắc cơ tại phòng lệch với lệnh trên Web! Điểm sức khỏe $H(t)$ hạ còn 60%.
+              <b>CẢNH BÁO SAI LỆCH (ACTUATOR MISMATCH):</b> Trạng thái công tắc cơ tại phòng lệch với lệnh trên Web! Điểm sức khỏe H(t) hạ còn 60%.
             </span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* 2. BẢNG ĐIỀU KHIỂN GLASSMORPHISM CAO CẤP GÓC TRÁI */}
-      <aside style={styles.hudSidebar}>
+      {/* 3. BẢNG ĐIỀU KHIỂN GLASSMORPHISM CAO CẤP GÓC TRÁI */}
+      <aside
+        style={{
+          ...styles.hudSidebar,
+          transform: isCollapsed ? 'translateX(-430px)' : 'translateX(0)',
+          opacity: isCollapsed ? 0 : 1,
+          pointerEvents: isCollapsed ? 'none' : 'auto'
+        }}
+      >
         {/* Header thông tin căn hộ */}
         <div style={styles.header}>
-          <div>
-            <div style={styles.titleRow}>
-              <span style={styles.livePulse} />
-              <h1 style={styles.mainTitle}>SMART HOME DIGITAL TWIN</h1>
-            </div>
-            <p style={styles.subTitle}>Mô hình 3D Căn hộ Thực tế • IoT Real-time</p>
+          <div style={styles.titleRow}>
+            <span style={styles.livePulse} />
+            <h1 style={styles.mainTitle}>SMART HOME DIGITAL TWIN</h1>
           </div>
+          <p style={styles.subTitle}>Mô hình 3D Căn hộ Thực tế • IoT Real-time</p>
         </div>
 
         {/* Thanh trạng thái Sức khỏe bản sao số H(t) */}
@@ -113,12 +201,12 @@ export default function TwinHUD({
           <div style={styles.healthTopRow}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Activity size={16} color={healthScore >= 80 ? '#34d399' : '#f87171'} />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>Sức khỏe Twin H(t)</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>Sức khỏe Twin H(t)</span>
             </div>
             <span
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '14px',
+                fontSize: '13px',
                 fontWeight: 800,
                 color: healthScore >= 80 ? '#34d399' : '#f87171'
               }}
@@ -143,18 +231,18 @@ export default function TwinHUD({
           {/* Nhiệt độ */}
           <div style={styles.sensorCard}>
             <div style={styles.sensorIconRow}>
-              <Thermometer size={16} color="#fb7185" />
+              <Thermometer size={15} color="#fb7185" />
               <span style={styles.sensorLabel}>Nhiệt độ phòng</span>
             </div>
             <div style={styles.sensorValue}>
-              {Number(reported.temperature !== undefined ? reported.temperature : 27.8).toFixed(1)}
+              {Number(reported.temperature !== undefined ? reported.temperature : 27.5).toFixed(1)}
               <span style={styles.sensorUnit}>°C</span>
             </div>
             <div style={styles.miniBarBg}>
               <div
                 style={{
                   ...styles.miniBarFill,
-                  width: `${Math.min(100, ((reported.temperature || 27.8) / 45) * 100)}%`,
+                  width: `${Math.min(100, ((reported.temperature || 27.5) / 45) * 100)}%`,
                   background: 'linear-gradient(90deg, #f43f5e, #fb7185)'
                 }}
               />
@@ -164,11 +252,11 @@ export default function TwinHUD({
           {/* Độ ẩm */}
           <div style={styles.sensorCard}>
             <div style={styles.sensorIconRow}>
-              <Droplets size={16} color="#38bdf8" />
+              <Droplets size={15} color="#38bdf8" />
               <span style={styles.sensorLabel}>Độ ẩm không khí</span>
             </div>
             <div style={styles.sensorValue}>
-              {Number(reported.humidity !== undefined ? reported.humidity : 66.3).toFixed(0)}
+              {Number(reported.humidity !== undefined ? reported.humidity : 66.0).toFixed(0)}
               <span style={styles.sensorUnit}>%</span>
             </div>
             <div style={styles.miniBarBg}>
@@ -185,18 +273,18 @@ export default function TwinHUD({
           {/* Ánh sáng */}
           <div style={styles.sensorCard}>
             <div style={styles.sensorIconRow}>
-              <Sun size={16} color="#facc15" />
+              <Sun size={15} color="#facc15" />
               <span style={styles.sensorLabel}>Ánh sáng tự nhiên</span>
             </div>
             <div style={styles.sensorValue}>
-              {reported.light_level !== undefined ? reported.light_level : 10}
+              {reported.light_level !== undefined ? reported.light_level : 18}
               <span style={styles.sensorUnit}>%</span>
             </div>
             <div style={styles.miniBarBg}>
               <div
                 style={{
                   ...styles.miniBarFill,
-                  width: `${Math.min(100, reported.light_level || 10)}%`,
+                  width: `${Math.min(100, reported.light_level || 18)}%`,
                   background: 'linear-gradient(90deg, #ca8a04, #facc15)'
                 }}
               />
@@ -206,7 +294,7 @@ export default function TwinHUD({
           {/* Sóng Wi-Fi */}
           <div style={styles.sensorCard}>
             <div style={styles.sensorIconRow}>
-              <Wifi size={16} color="#4ade80" />
+              <Wifi size={15} color="#4ade80" />
               <span style={styles.sensorLabel}>Kết nối IoT</span>
             </div>
             <div style={styles.sensorValue}>
@@ -228,22 +316,41 @@ export default function TwinHUD({
         {/* Tiêu đề cụm điều khiển thiết bị */}
         <div style={styles.controlsHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Sliders size={14} color="#38bdf8" />
-            <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', color: '#94a3b8' }}>
+            <Sliders size={13} color="#38bdf8" />
+            <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.4px', color: '#94a3b8' }}>
               ĐIỀU KHIỂN THIẾT BỊ (RPC)
             </span>
           </div>
+          <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>ĐỒNG BỘ 2 CHIỀU</span>
         </div>
 
-        {/* Danh sách 5 Thẻ Công tắc Thiết bị Smart Home */}
+        {/* Danh sách 6 Thẻ Công tắc Thiết bị Smart Home */}
         <div style={styles.actuatorList}>
           {smartDevices.map((dev) => {
             const isFan = dev.type === 'fan';
             const isAlarm = dev.type === 'alarm';
-            const activeColor = isAlarm ? '#ef4444' : (isFan ? '#38bdf8' : '#facc15');
-            const currentFanSpeed = reported.fan_speed !== undefined ? reported.fan_speed : (reported.fan_kitchen ? 3 : 0);
+            const activeColor = isAlarm ? '#ef4444' : isFan ? '#38bdf8' : '#facc15';
+            const currentFanSpeed =
+              reported.fan_speed !== undefined
+                ? reported.fan_speed
+                : reported.fan_kitchen
+                ? 3
+                : 0;
 
             if (isFan) {
+              const fanSpeedBadgeText = () => {
+                switch (currentFanSpeed) {
+                  case 1:
+                    return 'MỨC 1 (PWM 40%)';
+                  case 2:
+                    return 'MỨC 2 (PWM 75%)';
+                  case 3:
+                    return 'TURBO (PWM 100%)';
+                  default:
+                    return 'ĐANG TẮT';
+                }
+              };
+
               return (
                 <div
                   key={dev.id}
@@ -252,8 +359,14 @@ export default function TwinHUD({
                     flexDirection: 'column',
                     alignItems: 'stretch',
                     gap: '8px',
-                    borderColor: currentFanSpeed > 0 ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.08)',
-                    background: currentFanSpeed > 0 ? 'rgba(14, 165, 233, 0.12)' : 'rgba(30, 41, 59, 0.45)'
+                    borderColor:
+                      currentFanSpeed > 0
+                        ? 'rgba(56, 189, 248, 0.45)'
+                        : 'rgba(255, 255, 255, 0.08)',
+                    background:
+                      currentFanSpeed > 0
+                        ? 'rgba(14, 165, 233, 0.12)'
+                        : 'rgba(30, 41, 59, 0.45)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -261,14 +374,21 @@ export default function TwinHUD({
                       <div
                         style={{
                           ...styles.actuatorIconBox,
-                          backgroundColor: currentFanSpeed > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+                          backgroundColor:
+                            currentFanSpeed > 0
+                              ? 'rgba(56, 189, 248, 0.2)'
+                              : 'rgba(15, 23, 42, 0.6)',
                           boxShadow: currentFanSpeed > 0 ? '0 0 12px #38bdf8' : 'none'
                         }}
                       >
                         <Fan
-                          size={16}
+                          size={15}
                           color={currentFanSpeed > 0 ? '#38bdf8' : '#64748b'}
-                          style={currentFanSpeed > 0 ? { animation: `spin ${2.2 / currentFanSpeed}s linear infinite` } : {}}
+                          style={
+                            currentFanSpeed > 0
+                              ? { animation: `spin ${2.2 / currentFanSpeed}s linear infinite` }
+                              : {}
+                          }
                         />
                       </div>
                       <div>
@@ -279,16 +399,16 @@ export default function TwinHUD({
                     <span
                       style={{
                         fontSize: '10px',
-                        fontWeight: 700,
+                        fontWeight: 800,
                         color: currentFanSpeed > 0 ? '#38bdf8' : '#64748b'
                       }}
                     >
-                      {currentFanSpeed === 0 ? 'ĐANG TẮT' : `MỨC ${currentFanSpeed}${currentFanSpeed === 3 ? ' (TURBO)' : ''}`}
+                      {fanSpeedBadgeText()}
                     </span>
                   </div>
 
                   {/* 4 Nút Chọn Cấp Độ Gió PWM */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '5px', marginTop: '2px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '2px' }}>
                     {[
                       { lvl: 0, label: 'Tắt' },
                       { lvl: 1, label: 'Mức 1' },
@@ -306,11 +426,13 @@ export default function TwinHUD({
                           style={{
                             padding: '4px 6px',
                             borderRadius: '8px',
-                            border: isSelected ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
+                            border: isSelected
+                              ? '1px solid #38bdf8'
+                              : '1px solid rgba(255, 255, 255, 0.1)',
                             backgroundColor: isSelected ? '#0284c7' : 'rgba(15, 23, 42, 0.6)',
                             color: isSelected ? '#ffffff' : '#94a3b8',
                             fontSize: '10px',
-                            fontWeight: isSelected ? 700 : 500,
+                            fontWeight: isSelected ? 800 : 500,
                             cursor: 'pointer',
                             transition: 'all 0.2s ease'
                           }}
@@ -330,24 +452,38 @@ export default function TwinHUD({
                 onClick={() => onToggle(dev.method, !dev.isLit)}
                 style={{
                   ...styles.actuatorCard,
-                  borderColor: dev.isLit ? (isAlarm ? 'rgba(239, 68, 68, 0.6)' : isFan ? 'rgba(56, 189, 248, 0.5)' : 'rgba(250, 204, 21, 0.5)') : 'rgba(255, 255, 255, 0.08)',
-                  background: dev.isLit ? (isAlarm ? 'rgba(239, 68, 68, 0.18)' : isFan ? 'rgba(14, 165, 233, 0.12)' : 'rgba(234, 179, 8, 0.1)') : 'rgba(30, 41, 59, 0.45)'
+                  borderColor: dev.isLit
+                    ? isAlarm
+                      ? 'rgba(239, 68, 68, 0.6)'
+                      : 'rgba(250, 204, 21, 0.5)'
+                    : 'rgba(255, 255, 255, 0.08)',
+                  background: dev.isLit
+                    ? isAlarm
+                      ? 'rgba(239, 68, 68, 0.18)'
+                      : 'rgba(234, 179, 8, 0.1)'
+                    : 'rgba(30, 41, 59, 0.45)'
                 }}
               >
                 <div style={styles.actuatorLeft}>
                   <div
                     style={{
                       ...styles.actuatorIconBox,
-                      backgroundColor: dev.isLit ? (isAlarm ? 'rgba(239, 68, 68, 0.25)' : isFan ? 'rgba(56, 189, 248, 0.2)' : 'rgba(250, 204, 21, 0.2)') : 'rgba(15, 23, 42, 0.6)',
+                      backgroundColor: dev.isLit
+                        ? isAlarm
+                          ? 'rgba(239, 68, 68, 0.25)'
+                          : 'rgba(250, 204, 21, 0.2)'
+                        : 'rgba(15, 23, 42, 0.6)',
                       boxShadow: dev.isLit ? `0 0 12px ${activeColor}` : 'none'
                     }}
                   >
                     {isAlarm ? (
-                      <Bell size={16} color={dev.isLit ? '#ef4444' : '#64748b'} style={dev.isLit ? { animation: 'pulse 0.8s infinite' } : {}} />
-                    ) : isFan ? (
-                      <Fan size={16} color={dev.isLit ? '#38bdf8' : '#64748b'} style={dev.isLit ? { animation: 'spin 1.5s linear infinite' } : {}} />
+                      <Bell
+                        size={15}
+                        color={dev.isLit ? '#ef4444' : '#64748b'}
+                        style={dev.isLit ? { animation: 'pulse 0.8s infinite' } : {}}
+                      />
                     ) : (
-                      <Lightbulb size={16} color={dev.isLit ? '#facc15' : '#64748b'} />
+                      <Lightbulb size={15} color={dev.isLit ? '#facc15' : '#64748b'} />
                     )}
                   </div>
                   <div>
@@ -360,7 +496,7 @@ export default function TwinHUD({
                   <span
                     style={{
                       fontSize: '10px',
-                      fontWeight: 700,
+                      fontWeight: 800,
                       color: dev.isLit ? activeColor : '#64748b',
                       marginRight: '8px'
                     }}
@@ -387,91 +523,197 @@ export default function TwinHUD({
         </div>
       </aside>
 
-      {/* 3. THANH ĐIỀU HƯỚNG GÓC NHÌN CAMERA PHÍA DƯỚI */}
+      {/* 4. THANH ĐIỀU HƯỚNG GÓC NHÌN ĐÁY TRANG VỚI 6 NÚT CHUẨN ĐẶC TẢ (GIỐNG ẢNH MẪU) */}
       <nav style={styles.cameraToolbar}>
+        {/* Nút 1: Toàn cảnh 3D */}
         <button
-          onClick={() => setCameraMode('iso')}
+          onClick={() => setViewMode('overview')}
           style={{
             ...styles.camBtn,
-            backgroundColor: cameraMode === 'iso' ? '#0284c7' : 'rgba(15, 23, 42, 0.7)'
+            backgroundColor: viewMode === 'overview' ? '#0284c7' : 'transparent',
+            color: viewMode === 'overview' ? '#ffffff' : '#cbd5e1'
           }}
           title="Toàn cảnh 3D căn hộ góc nhìn Isometric"
         >
-          <Compass size={15} />
+          <Compass size={14} />
           <span>Toàn cảnh 3D</span>
         </button>
 
+        {/* Nút 2: Mặt bằng 2D */}
         <button
-          onClick={() => setCameraMode('top')}
+          onClick={() => setViewMode('top')}
           style={{
             ...styles.camBtn,
-            backgroundColor: cameraMode === 'top' ? '#0284c7' : 'rgba(15, 23, 42, 0.7)'
+            backgroundColor: viewMode === 'top' ? '#0284c7' : 'transparent',
+            color: viewMode === 'top' ? '#ffffff' : '#cbd5e1'
           }}
           title="Mặt cắt từ trên xuống (Mặt bằng 2D)"
         >
-          <Eye size={15} />
+          <Eye size={14} />
           <span>Mặt bằng 2D</span>
         </button>
 
+        {/* Nút 3: Vào Phòng khách */}
         <button
-          onClick={() => setCameraMode('living')}
+          onClick={() => setViewMode('living')}
           style={{
             ...styles.camBtn,
-            backgroundColor: cameraMode === 'living' ? '#0284c7' : 'rgba(15, 23, 42, 0.7)'
+            backgroundColor: viewMode === 'living' ? '#0284c7' : 'transparent',
+            color: viewMode === 'living' ? '#ffffff' : '#cbd5e1'
           }}
-          title="Cận cảnh Phòng khách"
+          title="Góc nhìn người thứ nhất (First-Person 360°) - Phòng khách"
         >
-          <Tv size={15} />
-          <span>Phòng khách</span>
+          <Tv size={14} />
+          <span>Vào Phòng khách</span>
         </button>
 
+        {/* Nút 4: Vào Phòng ngủ */}
         <button
-          onClick={() => setCameraMode('kitchen')}
+          onClick={() => setViewMode('bedroom')}
           style={{
             ...styles.camBtn,
-            backgroundColor: cameraMode === 'kitchen' ? '#0284c7' : 'rgba(15, 23, 42, 0.7)'
+            backgroundColor: viewMode === 'bedroom' ? '#0284c7' : 'transparent',
+            color: viewMode === 'bedroom' ? '#ffffff' : '#cbd5e1'
           }}
-          title="Cận cảnh Phòng bếp"
+          title="Góc nhìn người thứ nhất (First-Person 360°) - Phòng ngủ"
         >
-          <Utensils size={15} />
-          <span>Phòng bếp</span>
+          <Bed size={14} />
+          <span>Vào Phòng ngủ</span>
         </button>
 
+        {/* Nút 5: Vào Phòng bếp */}
         <button
-          onClick={() => setAutoRotate(!autoRotate)}
+          onClick={() => setViewMode('kitchen')}
           style={{
             ...styles.camBtn,
-            backgroundColor: autoRotate ? '#10b981' : 'rgba(15, 23, 42, 0.7)'
+            backgroundColor: viewMode === 'kitchen' ? '#0284c7' : 'transparent',
+            color: viewMode === 'kitchen' ? '#ffffff' : '#cbd5e1'
           }}
-          title="Tự động xoay 360 độ"
+          title="Góc nhìn người thứ nhất (First-Person 360°) - Phòng bếp"
         >
-          <RotateCw size={15} style={autoRotate ? { animation: 'spin 3s linear infinite' } : {}} />
-          <span>{autoRotate ? 'Dừng xoay' : 'Tự xoay'}</span>
+          <Utensils size={14} />
+          <span>Vào Phòng bếp</span>
         </button>
+
+        {/* Nút 6: Ra Ban công */}
+        <button
+          onClick={() => setViewMode('balcony')}
+          style={{
+            ...styles.camBtn,
+            backgroundColor: viewMode === 'balcony' ? '#0284c7' : 'transparent',
+            color: viewMode === 'balcony' ? '#ffffff' : '#cbd5e1',
+            boxShadow: viewMode === 'balcony' ? '0 0 15px #0284c7' : 'none'
+          }}
+          title="Góc nhìn người thứ nhất (First-Person 360°) - Ban công ngoài trời"
+        >
+          <Flower2 size={14} />
+          <span>Ra Ban công</span>
+        </button>
+
+        {/* Nút Phụ: Tự xoay (Chế độ Toàn cảnh) */}
+        {viewMode === 'overview' && (
+          <button
+            onClick={() => setAutoRotate(!autoRotate)}
+            style={{
+              ...styles.camBtn,
+              backgroundColor: autoRotate ? '#10b981' : 'transparent',
+              color: autoRotate ? '#ffffff' : '#94a3b8',
+              marginLeft: '4px'
+            }}
+            title="Tự động xoay 360 độ góc nhìn toàn cảnh"
+          >
+            <RotateCw size={13} style={autoRotate ? { animation: 'spin 3s linear infinite' } : {}} />
+            <span>{autoRotate ? 'Dừng xoay' : 'Tự xoay'}</span>
+          </button>
+        )}
       </nav>
     </>
   );
 }
 
 const styles = {
-  topAlertBanner: {
+  collapseBtn: {
     position: 'absolute',
-    top: '16px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    zIndex: 100,
-    background: 'rgba(239, 68, 68, 0.25)',
-    backdropFilter: 'blur(16px)',
-    border: '1px solid rgba(239, 68, 68, 0.6)',
-    borderRadius: '30px',
-    padding: '8px 24px',
-    boxShadow: '0 0 25px rgba(239, 68, 68, 0.4)',
-    pointerEvents: 'auto'
-  },
-  alertContent: {
+    top: '20px',
+    zIndex: 60,
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '6px',
+    padding: '7px 13px',
+    background: 'rgba(15, 23, 42, 0.85)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: '1px solid rgba(255, 255, 255, 0.16)',
+    borderRadius: '18px',
+    color: '#e2e8f0',
+    fontSize: '12px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+    transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+    pointerEvents: 'auto'
+  },
+
+  topStatusPillContainer: {
+    position: 'absolute',
+    top: '20px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 50,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    pointerEvents: 'none',
+    maxWidth: '90vw'
+  },
+  topStatusPill: {
+    background: 'rgba(15, 23, 42, 0.85)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: '1px solid rgba(56, 189, 248, 0.35)',
+    borderRadius: '24px',
+    padding: '8px 20px',
+    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6), 0 0 15px rgba(56, 189, 248, 0.2)',
+    pointerEvents: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px'
+  },
+  topStatusPillLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    whiteSpace: 'nowrap'
+  },
+  topStatusPillDivider: {
+    width: '1px',
+    height: '24px',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)'
+  },
+  topStatusPillRight: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    fontSize: '11px',
+    color: '#94a3b8',
+    fontWeight: 500,
+    lineHeight: '1.25',
+    whiteSpace: 'nowrap'
+  },
+
+  topAlertBanner: {
+    background: 'rgba(239, 68, 68, 0.25)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: '1px solid rgba(239, 68, 68, 0.65)',
+    borderRadius: '24px',
+    padding: '7px 20px',
+    boxShadow: '0 0 25px rgba(239, 68, 68, 0.4)',
+    pointerEvents: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
     color: '#fee2e2',
     fontSize: '12px'
   },
@@ -483,18 +725,18 @@ const styles = {
     width: '350px',
     maxHeight: 'calc(100vh - 40px)',
     overflowY: 'auto',
-    background: 'rgba(15, 23, 42, 0.76)',
+    background: 'rgba(15, 23, 42, 0.85)',
     backdropFilter: 'blur(24px)',
     WebkitBackdropFilter: 'blur(24px)',
     border: '1px solid rgba(255, 255, 255, 0.12)',
     borderRadius: '24px',
-    padding: '20px',
+    padding: '18px',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
     zIndex: 50,
-    pointerEvents: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px'
+    gap: '11px',
+    transition: 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease'
   },
 
   header: {
@@ -507,23 +749,23 @@ const styles = {
     gap: '10px'
   },
   livePulse: {
-    width: '10px',
-    height: '10px',
+    width: '9px',
+    height: '9px',
     borderRadius: '50%',
     backgroundColor: '#34d399',
     boxShadow: '0 0 10px #34d399'
   },
   mainTitle: {
-    fontSize: '15px',
+    fontSize: '14px',
     fontWeight: 800,
-    letterSpacing: '0.5px',
+    letterSpacing: '0.4px',
     background: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
     margin: 0
   },
   subTitle: {
-    fontSize: '11px',
+    fontSize: '10px',
     color: '#94a3b8',
     marginTop: '3px'
   },
@@ -531,14 +773,14 @@ const styles = {
   healthCard: {
     background: 'rgba(30, 41, 59, 0.5)',
     border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '14px',
-    padding: '10px 14px'
+    borderRadius: '13px',
+    padding: '9px 13px'
   },
   healthTopRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '8px'
+    marginBottom: '7px'
   },
   healthBarBg: {
     width: '100%',
@@ -556,16 +798,16 @@ const styles = {
   telemetryGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '8px'
+    gap: '7px'
   },
   sensorCard: {
     background: 'rgba(30, 41, 59, 0.45)',
     border: '1px solid rgba(255, 255, 255, 0.08)',
-    borderRadius: '12px',
-    padding: '8px 10px',
+    borderRadius: '11px',
+    padding: '7px 9px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px'
+    gap: '2px'
   },
   sensorIconRow: {
     display: 'flex',
@@ -579,7 +821,7 @@ const styles = {
   },
   sensorValue: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '17px',
+    fontSize: '16px',
     fontWeight: 700,
     color: '#ffffff',
     display: 'flex',
@@ -614,39 +856,39 @@ const styles = {
   actuatorList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '7px'
+    gap: '6px'
   },
   actuatorCard: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     border: '1px solid',
-    borderRadius: '12px',
-    padding: '8px 12px',
+    borderRadius: '11px',
+    padding: '7px 11px',
     cursor: 'pointer',
     transition: 'all 0.25s ease'
   },
   actuatorLeft: {
     display: 'flex',
     alignItems: 'center',
-    gap: '10px'
+    gap: '9px'
   },
   actuatorIconBox: {
-    width: '30px',
-    height: '30px',
-    borderRadius: '8px',
+    width: '28px',
+    height: '28px',
+    borderRadius: '7px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     transition: 'all 0.25s ease'
   },
   actuatorTitle: {
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: 700,
     color: '#ffffff'
   },
   actuatorSub: {
-    fontSize: '10px',
+    fontSize: '9px',
     color: '#64748b'
   },
   actuatorRight: {
@@ -654,17 +896,17 @@ const styles = {
     alignItems: 'center'
   },
   switchTrack: {
-    width: '34px',
-    height: '18px',
-    borderRadius: '12px',
+    width: '32px',
+    height: '17px',
+    borderRadius: '11px',
     padding: '2px',
     transition: 'background-color 0.25s ease',
     display: 'flex',
     alignItems: 'center'
   },
   switchThumb: {
-    width: '14px',
-    height: '14px',
+    width: '13px',
+    height: '13px',
     borderRadius: '50%',
     backgroundColor: '#ffffff',
     boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
@@ -673,31 +915,35 @@ const styles = {
 
   cameraToolbar: {
     position: 'absolute',
-    bottom: '24px',
+    bottom: '22px',
     left: '50%',
     transform: 'translateX(-50%)',
     zIndex: 50,
     display: 'flex',
-    gap: '8px',
-    background: 'rgba(15, 23, 42, 0.75)',
+    alignItems: 'center',
+    gap: '4px',
+    background: 'rgba(15, 23, 42, 0.88)',
     backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255, 255, 255, 0.12)',
-    borderRadius: '30px',
-    padding: '6px 10px',
-    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)',
-    pointerEvents: 'auto'
+    WebkitBackdropFilter: 'blur(20px)',
+    border: '1px solid rgba(255, 255, 255, 0.14)',
+    borderRadius: '26px',
+    padding: '5px 8px',
+    boxShadow: '0 12px 35px rgba(0, 0, 0, 0.6), 0 0 20px rgba(2, 132, 199, 0.2)',
+    pointerEvents: 'auto',
+    maxWidth: '96vw',
+    overflowX: 'auto'
   },
   camBtn: {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
     border: 'none',
-    borderRadius: '20px',
-    padding: '7px 14px',
-    color: '#ffffff',
+    borderRadius: '18px',
+    padding: '7px 13px',
     fontSize: '12px',
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: 'pointer',
-    transition: 'all 0.25s ease'
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+    whiteSpace: 'nowrap'
   }
 };

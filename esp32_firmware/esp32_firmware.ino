@@ -8,8 +8,8 @@
 // =========================================================================
 // 1. CẤU HÌNH WIFI, THINGSBOARD VÀ DIGITAL TWIN BACKEND
 // =========================================================================
-const char* WIFI_SSID = "Tuan Anh";        // Tên Wi-Fi (hoặc Hotspot 2.4GHz)
-const char* WIFI_PASS = "ducloi71";        // Mật khẩu Wi-Fi
+const char* WIFI_SSID = "Mạng";            // Tên Wi-Fi mới
+const char* WIFI_PASS = "12354679";        // Mật khẩu Wi-Fi
 
 // ThingsBoard Cloud
 const char* TB_SERVER = "thingsboard.cloud";
@@ -17,8 +17,8 @@ const int   TB_PORT   = 1883;
 const char* TB_TOKEN  = "XiP9UJASXyIQd3aBzzfr";  // Access Token thiết bị ESP32_IOT
 
 // Địa chỉ IP máy tính đang chạy mô hình 3D (Cổng 5000 của Backend)
-// Lưu ý: Nếu đổi mạng Wi-Fi khác, mở CMD gõ 'ipconfig' để lấy IPv4 máy tính và điền vào đây.
-const char* BACKEND_SERVER = "http://192.168.100.3:5000";
+// Máy tính hiện tại đang nhận IP mạng "Mạng" là 10.22.196.234
+const char* BACKEND_SERVER = "http://10.22.196.234:5000";
 
 // =========================================================================
 // 2. ĐỊNH NGHĨA CHÂN GPIO THIẾT BỊ VẬT LÝ
@@ -260,49 +260,49 @@ void checkPhysicalButtons() {
 
   bool changed = false;
 
-  // 1. Công tắc Phòng khách
+  // 1. Công tắc Phòng khách (GPIO 4)
   if (bLiving == LOW && lastLiving == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_LIVING) == LOW) {
       st_living = !st_living;
       digitalWrite(PIN_LED_LIVING, st_living ? HIGH : LOW);
-      Serial.printf("[CÔNG TẮC BREADBOARD] Phòng khách -> %s\n", st_living ? "BẬT" : "TẮT");
+      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 4 (Phòng khách) -> %s\n", st_living ? "BẬT (HIGH)" : "TẮT (LOW)");
       changed = true;
     }
   }
   lastLiving = bLiving;
 
-  // 2. Công tắc Phòng ngủ
+  // 2. Công tắc Phòng ngủ (GPIO 21)
   if (bBed == LOW && lastBed == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_BED) == LOW) {
       st_bed = !st_bed;
       digitalWrite(PIN_LED_BED, st_bed ? HIGH : LOW);
-      Serial.printf("[CÔNG TẮC BREADBOARD] Phòng ngủ -> %s\n", st_bed ? "BẬT" : "TẮT");
+      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 21 (Phòng ngủ) -> %s\n", st_bed ? "BẬT (HIGH)" : "TẮT (LOW)");
       changed = true;
     }
   }
   lastBed = bBed;
 
-  // 3. Công tắc Bếp
+  // 3. Công tắc Bếp (GPIO 22)
   if (bKit == LOW && lastKit == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_KIT) == LOW) {
       st_kit = !st_kit;
       digitalWrite(PIN_LED_KIT, st_kit ? HIGH : LOW);
-      Serial.printf("[CÔNG TẮC BREADBOARD] Bếp -> %s\n", st_kit ? "BẬT" : "TẮT");
+      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 22 (Bếp) -> %s\n", st_kit ? "BẬT (HIGH)" : "TẮT (LOW)");
       changed = true;
     }
   }
   lastKit = bKit;
 
-  // 4. Công tắc Ban công
+  // 4. Công tắc Ban công (GPIO 27)
   if (bBal == LOW && lastBal == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_BAL) == LOW) {
       st_bal = !st_bal;
       digitalWrite(PIN_LED_BAL, st_bal ? HIGH : LOW);
-      Serial.printf("[CÔNG TẮC BREADBOARD] Ban công -> %s\n", st_bal ? "BẬT" : "TẮT");
+      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 27 (Ban công) -> %s\n", st_bal ? "BẬT (HIGH)" : "TẮT (LOW)");
       changed = true;
     }
   }
@@ -350,13 +350,22 @@ void setup() {
   pinMode(PIN_LED_BAL,      OUTPUT);
   pinMode(PIN_BUZZER_ALARM, OUTPUT);
 
-  digitalWrite(PIN_LED_LIVING,   LOW);
-  digitalWrite(PIN_LED_BED,      LOW);
-  digitalWrite(PIN_LED_KIT,      LOW);
-  digitalWrite(PIN_LED_BAL,      LOW);
+  // --- HARDWARE POWER-ON SELF-TEST (Kiểm tra phần cứng 4 LED) ---
+  Serial.println(">> [HARDWARE TEST] Dang sang 4 LED trong 600ms de kiem tra cuc LED...");
+  digitalWrite(PIN_LED_LIVING, HIGH);
+  digitalWrite(PIN_LED_BED,    HIGH);
+  digitalWrite(PIN_LED_KIT,    HIGH);
+  digitalWrite(PIN_LED_BAL,    HIGH);
+  delay(600);
+  digitalWrite(PIN_LED_LIVING, LOW);
+  digitalWrite(PIN_LED_BED,    LOW);
+  digitalWrite(PIN_LED_KIT,    LOW);
+  digitalWrite(PIN_LED_BAL,    LOW);
   digitalWrite(PIN_BUZZER_ALARM, LOW);
+  Serial.println(">> [HARDWARE TEST] 4 LED da tat! Neu khong thay 4 LED chop sang, vui long kiem tra chieu Anode/Cathode!");
 
   // 4 Công tắc cơ kích hoạt trở kéo lên nội (INPUT_PULLUP)
+  // LƯU Ý: Chân còn lại của nút nhấn PHẢI nối vào chân GND!
   pinMode(PIN_BTN_LIVING, INPUT_PULLUP);
   pinMode(PIN_BTN_BED,    INPUT_PULLUP);
   pinMode(PIN_BTN_KIT,    INPUT_PULLUP);
@@ -371,14 +380,25 @@ void setup() {
   #endif
   setFanSpeed(0);
 
-  // Kết nối Wi-Fi
-  Serial.printf("Dang ket noi WiFi: %s", WIFI_SSID);
+  // Kết nối Wi-Fi (với chẩn đoán thông minh)
+  Serial.printf("\n[WIFI] Dang ket noi WiFi: '%s'", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  int retryCount = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    retryCount++;
+    if (retryCount % 24 == 0) { // Mỗi 12 giây cảnh báo nếu chưa kết nối
+      Serial.println("\n[!] Canh bao: Chưa vào được Wi-Fi. Kiem tra:");
+      Serial.println("  1. ESP32 chi ho tro bang tan 2.4GHz (khong bat duoc 5GHz).");
+      Serial.println("  2. Neu phat Hotspot tu iPhone: Bat 'Toi da hoa kha nang tuong thich'.");
+      Serial.println("  3. Neu phat tu Android: Chon bang tan '2.4 GHz AP Band'.");
+      Serial.println("  4. Tranh dat ten Wi-Fi co dau tieng Viet (nen dung chu khong dau, vd: 'MyWiFi').");
+      Serial.print("Dang tiep tuc ket noi");
+    }
   }
-  Serial.println("\nWiFi da ket noi!");
+  Serial.println("\n>> WiFi da ket noi thanh cong!");
   Serial.print(">> [ESP32 IP Address]: ");
   Serial.println(WiFi.localIP());
 

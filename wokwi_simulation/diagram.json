@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "author": "Antigravity Smart Home Team",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-devkit-c-v4",
+      "id": "esp",
+      "top": 120,
+      "left": 100,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-dht11",
+      "id": "dht1",
+      "top": -60,
+      "left": 130,
+      "attrs": { "temperature": "27.5", "humidity": "66" }
+    },
+    {
+      "type": "wokwi-photoresistor-sensor",
+      "id": "ldr1",
+      "top": -60,
+      "left": -20,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 20,
+      "left": -120,
+      "attrs": { "volume": "0.1" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_living",
+      "top": 40,
+      "left": 360,
+      "attrs": { "color": "gold", "label": "LIVING" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_living",
+      "top": 50,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_bed",
+      "top": 110,
+      "left": 360,
+      "attrs": { "color": "blue", "label": "BEDROOM" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_bed",
+      "top": 120,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_kit",
+      "top": 180,
+      "left": 360,
+      "attrs": { "color": "yellow", "label": "KITCHEN" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_kit",
+      "top": 190,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_bal",
+      "top": 250,
+      "left": 360,
+      "attrs": { "color": "green", "label": "BALCONY" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_bal",
+      "top": 260,
+      "left": 280,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_living",
+      "top": 420,
+      "left": -30,
+      "attrs": { "color": "gold", "label": "SW LIVING" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_bed",
+      "top": 420,
+      "left": 70,
+      "attrs": { "color": "blue", "label": "SW BED" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_kit",
+      "top": 420,
+      "left": 170,
+      "attrs": { "color": "yellow", "label": "SW KITCHEN" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_bal",
+      "top": 420,
+      "left": 270,
+      "attrs": { "color": "green", "label": "SW BALCONY" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "fan_indicator",
+      "top": 320,
+      "left": 360,
+      "attrs": { "color": "cyan", "label": "FAN PWM" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_fan",
+      "top": 330,
+      "left": 280,
+      "attrs": { "value": "220" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "esp:3V3", "dht1:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "dht1:GND", "black", [ "v0" ] ],
+    [ "esp:15", "dht1:SDA", "orange", [ "v0" ] ],
+
+    [ "esp:3V3", "ldr1:VCC", "red", [ "v0" ] ],
+    [ "esp:GND.1", "ldr1:GND", "black", [ "v0" ] ],
+    [ "esp:34", "ldr1:AO", "purple", [ "v0" ] ],
+
+    [ "esp:GND.2", "bz1:1", "black", [ "v0" ] ],
+    [ "esp:23", "bz1:2", "red", [ "v0" ] ],
+
+    [ "esp:19", "r_living:1", "gold", [ "h0" ] ],
+    [ "r_living:2", "led_living:A", "gold", [ "h0" ] ],
+    [ "led_living:C", "esp:GND.2", "black", [ "h0" ] ],
+
+    [ "esp:18", "r_bed:1", "blue", [ "h0" ] ],
+    [ "r_bed:2", "led_bed:A", "blue", [ "h0" ] ],
+    [ "led_bed:C", "esp:GND.2", "black", [ "h0" ] ],
+
+    [ "esp:5", "r_kit:1", "orange", [ "h0" ] ],
+    [ "r_kit:2", "led_kit:A", "orange", [ "h0" ] ],
+    [ "led_kit:C", "esp:GND.2", "black", [ "h0" ] ],
+
+    [ "esp:17", "r_bal:1", "green", [ "h0" ] ],
+    [ "r_bal:2", "led_bal:A", "green", [ "h0" ] ],
+    [ "led_bal:C", "esp:GND.2", "black", [ "h0" ] ],
+
+    [ "esp:16", "r_fan:1", "cyan", [ "h0" ] ],
+    [ "r_fan:2", "fan_indicator:A", "cyan", [ "h0" ] ],
+    [ "fan_indicator:C", "esp:GND.2", "black", [ "h0" ] ],
+
+    [ "esp:4", "btn_living:1.l", "gold", [ "v0" ] ],
+    [ "btn_living:2.r", "esp:GND.1", "black", [ "v0" ] ],
+
+    [ "esp:21", "btn_bed:1.l", "blue", [ "v0" ] ],
+    [ "btn_bed:2.r", "esp:GND.1", "black", [ "v0" ] ],
+
+    [ "esp:22", "btn_kit:1.l", "orange", [ "v0" ] ],
+    [ "btn_kit:2.r", "esp:GND.2", "black", [ "v0" ] ],
+
+    [ "esp:27", "btn_bal:1.l", "green", [ "v0" ] ],
+    [ "btn_bal:2.r", "esp:GND.1", "black", [ "v0" ] ]
+  ]
+}
+
