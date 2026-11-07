@@ -1,2022 +1,1652 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
-import { RoundedBox, Html, Grid, OrbitControls } from '@react-three/drei';
 
-// =========================================================================
-// A. CẤU HÌNH TỌA ĐỘ VÀ KHÔNG GIAN 4 PHÒNG CHUẨN ĐẶC TẢ (ROOM_CONFIG)
-// =========================================================================
+// ============================================================================
+// 1. DIGITAL TWIN ROOM CONFIGURATION & LOGICALLY CORRECT COORDINATES
+// ============================================================================
+// Footprint: 16x16 units (4 rooms, each 8x8 units)
+// - Top-Left: Bedroom     (X: -8..0, Z: -8..0)
+// - Top-Right: Balcony    (X:  0..8, Z: -8..0)
+// - Bottom-Left: Living   (X: -8..0, Z:  0..8)
+// - Bottom-Right: Kitchen (X:  0..8, Z:  0..8)
 export const ROOM_CONFIG = {
   bedroom: {
     id: 'bedroom',
-    name: 'Phòng Ngủ',
-    center: [-4, 1.7, -3.5],
-    defaultYaw: -0.4,
-    lightPos: [-4, 3.35, -4],
-    switchPos: [-0.3, 1.45, -1.5],
-    badgePos: [-4, 2.9, -4],
+    name: 'PHÒNG NGỦ',
+    center: new THREE.Vector3(-3.2, 1.72, -3.8),
+    defaultYaw: -2.35,
+    lightPos: new THREE.Vector3(-4, 3.85, -4),
+    badgePos: new THREE.Vector3(-4, 2.9, -4),
+    switchPos: new THREE.Vector3(-0.3, 1.45, -1.2),
     lightKey: 'light_bed',
     toggleMethod: 'setBed',
     portals: [
-      { to: 'living', label: '➔ Bước sang Phòng Khách', pos: [-2.0, 1.1, -0.2] },
-      { to: 'balcony', label: '➔ Mở cửa ra Ban Công', pos: [-0.2, 1.1, -4.0] }
+      { target: 'living', label: '➔ Bước sang Phòng Khách', pos: new THREE.Vector3(-2.1, 1.15, -0.3) },
+      { target: 'balcony', label: '➔ Mở cửa ra Ban Công', pos: new THREE.Vector3(-0.3, 1.15, -4.0) }
     ]
   },
   balcony: {
     id: 'balcony',
-    name: 'Ban Công',
-    center: [4, 1.7, -3.6],
-    defaultYaw: -2.0,
-    lightPos: [1.2, 2.8, -4],
-    switchPos: [0.3, 1.45, -2.5],
-    badgePos: [4, 2.9, -4],
+    name: 'BAN CÔNG',
+    center: new THREE.Vector3(4.5, 1.72, -3.8),
+    defaultYaw: -1.5,
+    lightPos: new THREE.Vector3(4.0, 3.1, -4),
+    badgePos: new THREE.Vector3(4, 2.7, -4),
+    switchPos: new THREE.Vector3(0.3, 1.45, -2.5),
     lightKey: 'light_balcony',
     toggleMethod: 'setBalcony',
     portals: [
-      { to: 'bedroom', label: '➔ Vào Phòng Ngủ', pos: [0.2, 1.1, -4.0] },
-      { to: 'kitchen', label: '➔ Vào Phòng Bếp', pos: [4.0, 1.1, -0.2] }
+      { target: 'bedroom', label: '➔ Vào Phòng Ngủ', pos: new THREE.Vector3(0.3, 1.15, -4.0) },
+      { target: 'kitchen', label: '➔ Vào Phòng Bếp', pos: new THREE.Vector3(1.6, 1.15, -0.3) }
     ]
   },
   living: {
     id: 'living',
-    name: 'Phòng Khách',
-    center: [-3.8, 1.7, 4.2],
-    defaultYaw: 0.6,
-    lightPos: [-4, 3.35, 4],
-    switchPos: [-0.3, 1.45, 1.6],
-    badgePos: [-4, 2.9, 4],
+    name: 'PHÒNG KHÁCH',
+    center: new THREE.Vector3(-2.6, 1.72, 4.0),
+    defaultYaw: -1.57, // Facing West toward TV wall
+    lightPos: new THREE.Vector3(-4, 3.85, 4),
+    badgePos: new THREE.Vector3(-4, 2.9, 4),
+    switchPos: new THREE.Vector3(-0.3, 1.45, 1.2),
     lightKey: 'light_living',
     toggleMethod: 'setLiving',
     portals: [
-      { to: 'bedroom', label: '➔ Bước vào Phòng Ngủ', pos: [-2.0, 1.1, 0.2] },
-      { to: 'kitchen', label: '➔ Bước sang Phòng Bếp', pos: [-0.2, 1.1, 4.0] }
+      { target: 'bedroom', label: '➔ Bước vào Phòng Ngủ', pos: new THREE.Vector3(-2.1, 1.15, 0.3) },
+      { target: 'kitchen', label: '➔ Bước sang Phòng Bếp', pos: new THREE.Vector3(-0.3, 1.15, 4.0) }
     ]
   },
   kitchen: {
     id: 'kitchen',
-    name: 'Phòng Bếp',
-    center: [3.5, 1.7, 3.8],
-    defaultYaw: 2.3,
-    lightPos: [4, 3.35, 4],
-    switchPos: [0.3, 1.45, 1.6],
-    badgePos: [4, 2.9, 4],
+    name: 'PHÒNG BẾP',
+    center: new THREE.Vector3(2.6, 1.72, 3.8),
+    defaultYaw: 0.85, // Looking toward kitchen counter & dining
+    lightPos: new THREE.Vector3(4, 3.85, 4),
+    badgePos: new THREE.Vector3(4, 2.9, 4),
+    switchPos: new THREE.Vector3(0.3, 1.45, 2.5),
     lightKey: 'light_kitchen',
     toggleMethod: 'setKitchen',
     portals: [
-      { to: 'living', label: '➔ Về Phòng Khách', pos: [0.2, 1.1, 4.0] },
-      { to: 'balcony', label: '➔ Ra Ban Công thoáng gió', pos: [4.0, 1.1, 0.2] }
+      { target: 'living', label: '➔ Về Phòng Khách', pos: new THREE.Vector3(0.3, 1.15, 4.0) },
+      { target: 'balcony', label: '➔ Ra Ban Công thoáng gió', pos: new THREE.Vector3(1.6, 1.15, 0.3) }
     ]
   }
 };
 
-// =========================================================================
-// 1. HELPER GENERATE PROCEDURAL HIGH-RESOLUTION CANVAS TEXTURES (ARCHVIZ)
-// =========================================================================
-
-// Sàn gỗ sồi / óc chó cao cấp với vân gỗ tự nhiên và mạch ghép
-function createWoodFloorTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  // Nền gỗ ấm
-  ctx.fillStyle = '#6d4327';
-  ctx.fillRect(0, 0, 512, 512);
-
-  const numPlanks = 8;
-  const plankH = 512 / numPlanks;
-  for (let i = 0; i < numPlanks; i++) {
-    const y = i * plankH;
-    ctx.fillStyle = i % 2 === 0 ? '#784a2b' : '#613b21';
-    ctx.fillRect(0, y, 512, plankH - 2);
-
-    // Vân gỗ gợn sóng
-    ctx.strokeStyle = 'rgba(35, 18, 8, 0.22)';
-    ctx.lineWidth = 1.2;
-    for (let k = 0; k < 5; k++) {
-      ctx.beginPath();
-      const gy = y + 4 + k * (plankH / 5);
-      ctx.moveTo(0, gy);
-      ctx.bezierCurveTo(150, gy + (k % 2 === 0 ? 3 : -3), 350, gy + (k % 2 === 0 ? -3 : 3), 512, gy);
-      ctx.stroke();
-    }
-
-    // Đường chỉ rãnh ghép ván gỗ
-    ctx.fillStyle = '#26140a';
-    ctx.fillRect(0, y + plankH - 2, 512, 2);
-
-    // Mối nối dọc so le
-    const splitX = ((i * 180) + 70) % 512;
-    ctx.fillRect(splitX, y, 2, plankH);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(4, 4);
-  texture.anisotropy = 16;
-  return texture;
-}
-
-// Sàn đá cẩm thạch / gạch men bóng cao cấp cho Phòng Bếp
-function createMarbleTileTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#cbd5e1';
-  ctx.fillRect(0, 0, 512, 512);
-
-  const tileSize = 128;
-  for (let x = 0; x < 512; x += tileSize) {
-    for (let y = 0; y < 512; y += tileSize) {
-      ctx.fillStyle = (x + y) % (tileSize * 2) === 0 ? '#e2e8f0' : '#f1f5f9';
-      ctx.fillRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
-    }
-  }
-
-  // Vân đá cẩm thạch mềm mại
-  ctx.strokeStyle = 'rgba(100, 116, 139, 0.28)';
-  ctx.lineWidth = 1.6;
-  for (let i = 0; i < 6; i++) {
-    ctx.beginPath();
-    const sx = (i * 90) % 512;
-    ctx.moveTo(sx, 0);
-    ctx.bezierCurveTo(sx + 60, 160, sx - 40, 360, sx + 100, 512);
-    ctx.stroke();
-  }
-
-  // Mạch gạch sắc nét
-  ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 2;
-  for (let i = 0; i <= 512; i += tileSize) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0); ctx.lineTo(i, 512);
-    ctx.moveTo(0, i); ctx.lineTo(512, i);
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(3, 3);
-  texture.anisotropy = 16;
-  return texture;
-}
-
-// Sàn nan gỗ Teak ngoài trời cho Ban Công
-function createTeakDeckTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#170f09'; // Khe giãn nở đen
-  ctx.fillRect(0, 0, 512, 512);
-
-  const numSlats = 14;
-  const slatW = 512 / numSlats;
-  for (let i = 0; i < numSlats; i++) {
-    const x = i * slatW;
-    ctx.fillStyle = i % 2 === 0 ? '#8c532b' : '#794521';
-    ctx.fillRect(x + 2, 0, slatW - 4, 512);
-
-    ctx.strokeStyle = 'rgba(30, 15, 6, 0.18)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x + slatW / 2, 0);
-    ctx.lineTo(x + slatW / 2 + (i % 3 === 0 ? 3 : -3), 512);
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(3, 3);
-  texture.anisotropy = 16;
-  return texture;
-}
-
-// Thảm dệt sợi tự nhiên cao cấp với hoa văn viền
-function createRugTexture(bgColor = '#1e293b', borderColor = '#0284c7') {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Viền chỉ đôi
-  ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 14;
-  ctx.strokeRect(18, 18, 476, 476);
-  ctx.lineWidth = 4;
-  ctx.strokeRect(38, 38, 436, 436);
-
-  // Vân dệt quả trám
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 2;
-  for (let x = 60; x <= 450; x += 36) {
-    for (let y = 60; y <= 450; y += 36) {
-      ctx.strokeRect(x, y, 24, 24);
-    }
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.anisotropy = 16;
-  return texture;
-}
-
-// Màn hình Smart TV OLED hiển thị Dashboard / Wallpaper sống động
-function createTVScreenTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 280;
-  const ctx = canvas.getContext('2d');
-
-  // Nền vũ trụ công nghệ
-  const grad = ctx.createLinearGradient(0, 0, 512, 280);
-  grad.addColorStop(0, '#020617');
-  grad.addColorStop(0.5, '#0c4a6e');
-  grad.addColorStop(1, '#0369a1');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 512, 280);
-
-  // Đồng hồ & Trạng thái Digital Twin
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 36px monospace';
-  ctx.fillText('20:45', 30, 60);
-
-  ctx.fillStyle = '#38bdf8';
-  ctx.font = 'bold 18px sans-serif';
-  ctx.fillText('SMART TWIN AMBIENT OS', 30, 95);
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-  ctx.font = '14px sans-serif';
-  ctx.fillText('Nhiệt độ 27.5°C • Độ ẩm 66% • IoT Connected', 30, 125);
-
-  // Sóng biểu đồ năng lượng
-  ctx.strokeStyle = '#34d399';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(30, 210);
-  ctx.bezierCurveTo(120, 160, 240, 240, 360, 180);
-  ctx.lineTo(480, 220);
-  ctx.stroke();
-
-  // Khung widget nổi
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
-  ctx.strokeRect(330, 30, 150, 95);
-  ctx.fillStyle = '#fde047';
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillText('⚡ Năng lượng: 1.2kW', 345, 65);
-  ctx.fillStyle = '#38bdf8';
-  ctx.fillText('● 4 Đèn • 1 Quạt Active', 345, 95);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.anisotropy = 16;
-  return texture;
-}
-
-// Tranh sơn dầu hiện đại trừu tượng
-function createAbstractArtTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 360;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 0, 512, 360);
-
-  // Vệt sơn vàng kim & xanh ngọc nghệ thuật
-  ctx.fillStyle = '#d97706';
-  ctx.beginPath();
-  ctx.ellipse(180, 180, 120, 70, Math.PI / 4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#0284c7';
-  ctx.beginPath();
-  ctx.ellipse(320, 180, 110, 80, -Math.PI / 6, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = '#fde047';
-  ctx.fillRect(200, 120, 90, 8);
-  ctx.fillRect(170, 220, 140, 6);
-
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(256, 180, 95, 0, Math.PI * 2);
-  ctx.stroke();
-
-  return new THREE.CanvasTexture(canvas);
-}
-
-// =========================================================================
-// 2. BỘ ĐIỀU KHIỂN CAMERA FIRST-PERSON 360° & ORBIT INTERPOLATION (CAMERA RIG)
-// =========================================================================
-function CameraRig({ viewMode, setViewMode, autoRotate }) {
-  const { camera, gl } = useThree();
-  const controlsRef = useRef();
-
-  const isFirstPerson = !!ROOM_CONFIG[viewMode];
-  const fpYaw = useRef(ROOM_CONFIG[viewMode]?.defaultYaw || 0);
-  const fpPitch = useRef(0);
-  const isDragging = useRef(false);
-  const lastPointer = useRef({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (ROOM_CONFIG[viewMode]) {
-      fpYaw.current = ROOM_CONFIG[viewMode].defaultYaw;
-      fpPitch.current = 0;
-    } else if (viewMode === 'overview') {
-      camera.position.set(16, 18, 16);
-      if (controlsRef.current) {
-        controlsRef.current.target.set(0, 0.8, 0);
-        controlsRef.current.update();
-      }
-    } else if (viewMode === 'top') {
-      camera.position.set(0.01, 26, 0.01);
-      if (controlsRef.current) {
-        controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.update();
-      }
-    }
-  }, [viewMode, camera]);
-
-  useEffect(() => {
-    const dom = gl.domElement;
-
-    const handlePointerDown = (e) => {
-      if (e.target !== dom) return;
-      isDragging.current = true;
-      lastPointer.current = { x: e.clientX, y: e.clientY };
-      if (isFirstPerson) dom.style.cursor = 'grabbing';
-    };
-
-    const handlePointerMove = (e) => {
-      if (!isDragging.current || !isFirstPerson) return;
-      const dx = e.clientX - lastPointer.current.x;
-      const dy = e.clientY - lastPointer.current.y;
-      lastPointer.current = { x: e.clientX, y: e.clientY };
-
-      fpYaw.current -= dx * 0.0035;
-      const newPitch = fpPitch.current - dy * 0.0028;
-      fpPitch.current = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, newPitch));
-    };
-
-    const handlePointerUp = () => {
-      isDragging.current = false;
-      if (isFirstPerson) dom.style.cursor = 'grab';
-    };
-
-    dom.style.cursor = isFirstPerson ? 'grab' : 'default';
-
-    dom.addEventListener('pointerdown', handlePointerDown);
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-
-    return () => {
-      dom.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [gl, isFirstPerson]);
-
-  useFrame((_, delta) => {
-    if (isFirstPerson) {
-      const room = ROOM_CONFIG[viewMode];
-      if (room) {
-        const targetPos = new THREE.Vector3(...room.center);
-        camera.position.lerp(targetPos, Math.min(1, delta * 4.5));
-
-        const yaw = fpYaw.current;
-        const pitch = fpPitch.current;
-        const dirX = Math.sin(yaw) * Math.cos(pitch);
-        const dirY = Math.sin(pitch);
-        const dirZ = Math.cos(yaw) * Math.cos(pitch);
-
-        const lookTarget = new THREE.Vector3(
-          camera.position.x + dirX,
-          camera.position.y + dirY,
-          camera.position.z + dirZ
-        );
-        camera.lookAt(lookTarget);
-      }
-    } else if (viewMode === 'top') {
-      const targetPos = new THREE.Vector3(0.01, 26, 0.01);
-      camera.position.lerp(targetPos, Math.min(1, delta * 3.5));
-      if (controlsRef.current) {
-        controlsRef.current.target.lerp(new THREE.Vector3(0, 0, 0), Math.min(1, delta * 3.5));
-      }
-    }
-  });
-
-  return (
-    <OrbitControls
-      ref={controlsRef}
-      makeDefault
-      enabled={!isFirstPerson}
-      autoRotate={autoRotate && !isFirstPerson}
-      autoRotateSpeed={1.0}
-      enableRotate={!isFirstPerson}
-      enableZoom={!isFirstPerson}
-      maxPolarAngle={viewMode === 'top' ? Math.PI : Math.PI / 2.15}
-      minDistance={6}
-      maxDistance={42}
-      target={[0, 0.8, 0]}
-    />
-  );
-}
-
-// =========================================================================
-// 3. ĐÈN VÒNG HALO HIỆN ĐẠI & CHIẾU SÁNG KIẾN TRÚC THỰC TẾ
-// =========================================================================
-function HaloCeilingChandelier({ position, isLit, label, onClick }) {
-  return (
-    <group position={position}>
-      {/* Đế gắn trần tròn kim loại đen */}
-      <mesh position={[0, 0.08, 0]} castShadow>
-        <cylinderGeometry args={[0.22, 0.25, 0.05, 24]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.2} />
-      </mesh>
-
-      {/* Dây treo thanh mảnh */}
-      {[-0.32, 0.32].map((x, i) => (
-        <mesh key={i} position={[x, -0.15, 0]}>
-          <cylinderGeometry args={[0.006, 0.006, 0.4, 8]} />
-          <meshStandardMaterial color="#94a3b8" metalness={0.9} />
-        </mesh>
-      ))}
-
-      {/* Vòng đèn Halo Ring sang trọng */}
-      <mesh
-        position={[0, -0.35, 0]}
-        rotation={[Math.PI / 2, 0, 0]}
-        onClick={onClick}
-        style={{ cursor: 'pointer' }}
-      >
-        <torusGeometry args={[0.55, 0.04, 16, 48]} />
-        <meshStandardMaterial
-          color={isLit ? '#ffffff' : '#334155'}
-          emissive={isLit ? '#fef08a' : '#000000'}
-          emissiveIntensity={isLit ? 3.5 : 0}
-          roughness={0.15}
-          metalness={0.3}
-        />
-      </mesh>
-
-      {/* Nguồn sáng PointLight ấm áp và SpotLight chiếu rọi sàn khi BẬT */}
-      {isLit && (
-        <>
-          <pointLight
-            position={[0, -0.4, 0]}
-            color="#fffbeb"
-            intensity={5.5}
-            distance={12}
-            decay={1.8}
-            castShadow
-            shadow-mapSize={[1024, 1024]}
-          />
-          <spotLight
-            position={[0, -0.35, 0]}
-            target-position={[position[0], 0, position[2]]}
-            color="#fef08a"
-            intensity={3.0}
-            angle={0.95}
-            penumbra={0.6}
-            distance={9}
-          />
-          {/* Vầng hào quang tán xạ quanh trần */}
-          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.25, 1.2, 32]} />
-            <meshBasicMaterial
-              color="#fef08a"
-              transparent
-              opacity={0.12}
-              side={THREE.DoubleSide}
-              depthWrite={false}
-            />
-          </mesh>
-        </>
-      )}
-    </group>
-  );
-}
-
-// =========================================================================
-// 4. KHUNG CỬA LƯU THÔNG RỖNG & CÁNH CỬA GỖ MỞ HÉ 75 ĐỘ (OPEN WALK-THROUGH)
-// =========================================================================
-function OpenDoorwayFrame({ position, rotation = [0, 0, 0], doorSwing = 1.3 }) {
-  return (
-    <group position={position} rotation={rotation}>
-      {/* Khuôn cửa gỗ dày dặn (Nẹp trái, Nẹp phải, Lanh-tô trên) */}
-      {/* Nẹp trái */}
-      <mesh position={[-0.72, 1.2, 0]} castShadow>
-        <boxGeometry args={[0.08, 2.4, 0.24]} />
-        <meshStandardMaterial color="#451a03" roughness={0.4} />
-      </mesh>
-      {/* Nẹp phải */}
-      <mesh position={[0.72, 1.2, 0]} castShadow>
-        <boxGeometry args={[0.08, 2.4, 0.24]} />
-        <meshStandardMaterial color="#451a03" roughness={0.4} />
-      </mesh>
-      {/* Lanh-tô trên */}
-      <mesh position={[0, 2.42, 0]} castShadow>
-        <boxGeometry args={[1.52, 0.1, 0.24]} />
-        <meshStandardMaterial color="#451a03" roughness={0.4} />
-      </mesh>
-
-      {/* Cánh cửa gỗ pano mở xoay 75 độ tạo lối đi thông suốt */}
-      <group position={[-0.68, 0, 0]} rotation={[0, doorSwing, 0]}>
-        <mesh position={[0.55, 1.18, 0]} castShadow>
-          <boxGeometry args={[1.1, 2.34, 0.05]} />
-          <meshStandardMaterial color="#5c2d12" roughness={0.35} metalness={0.1} />
-        </mesh>
-        {/* Pano dập nổi trang trí trên cửa */}
-        <mesh position={[0.55, 1.6, 0.028]}>
-          <boxGeometry args={[0.85, 0.8, 0.012]} />
-          <meshStandardMaterial color="#451a03" roughness={0.4} />
-        </mesh>
-        <mesh position={[0.55, 0.7, 0.028]}>
-          <boxGeometry args={[0.85, 0.8, 0.012]} />
-          <meshStandardMaterial color="#451a03" roughness={0.4} />
-        </mesh>
-        {/* Tay nắm cửa inox mạ bạc sang trọng */}
-        <mesh position={[0.98, 1.05, 0.045]}>
-          <boxGeometry args={[0.04, 0.14, 0.03]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.95} roughness={0.1} />
-        </mesh>
-        <mesh position={[0.94, 1.08, 0.07]}>
-          <cylinderGeometry args={[0.012, 0.012, 0.12, 12]} rotation={[0, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.95} roughness={0.1} />
-        </mesh>
-      </group>
-    </group>
-  );
-}
-
-// =========================================================================
-// 5. CÔNG TẮC GẮN TƯỜNG & THẺ THÔNG BÁO TƯƠNG TÁC
-// =========================================================================
-function WallSwitchHotspot({
-  position,
-  rotation = [0, 0, 0],
-  isLit,
-  isMismatch,
-  roomName,
-  onToggle,
-  onToggleMismatch,
-  showCard = false
-}) {
-  return (
-    <group position={position} rotation={rotation}>
-      <mesh castShadow>
-        <boxGeometry args={[0.26, 0.28, 0.02]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.2} />
-      </mesh>
-      <mesh position={[0, 0, 0.012]}>
-        <boxGeometry args={[0.24, 0.26, 0.006]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.1} metalness={0.2} />
-      </mesh>
-      <mesh
-        position={[0, 0, 0.018]}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (onToggle) onToggle();
-        }}
-        style={{ cursor: 'pointer' }}
-      >
-        <boxGeometry args={[0.12, 0.12, 0.008]} />
-        <meshStandardMaterial
-          color={isMismatch ? '#ef4444' : isLit ? '#38bdf8' : '#64748b'}
-          emissive={isMismatch ? '#ef4444' : isLit ? '#38bdf8' : '#000000'}
-          emissiveIntensity={isMismatch ? 3.5 : isLit ? 2.5 : 0}
-        />
-      </mesh>
-
-      {showCard && (
-        <Html position={[0, 0.16, 0.05]} center distanceFactor={7}>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'rgba(15, 23, 42, 0.92)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: isMismatch
-                ? '1px solid rgba(239, 68, 68, 0.8)'
-                : isLit
-                ? '1px solid rgba(250, 204, 21, 0.7)'
-                : '1px solid rgba(255, 255, 255, 0.16)',
-              borderRadius: '12px',
-              padding: '6px 12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '4px',
-              boxShadow: isMismatch
-                ? '0 0 25px rgba(239, 68, 68, 0.5)'
-                : '0 8px 24px rgba(0, 0, 0, 0.6)',
-              minWidth: '150px',
-              whiteSpace: 'nowrap',
-              userSelect: 'none'
-            }}
-          >
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onToggle) onToggle();
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-            >
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc' }}>
-                CÔNG TẮC {roomName.toUpperCase()}
-              </span>
-              <span
-                style={{
-                  fontSize: '9px',
-                  fontWeight: 800,
-                  padding: '2px 7px',
-                  borderRadius: '10px',
-                  backgroundColor: isMismatch
-                    ? 'rgba(239, 68, 68, 0.35)'
-                    : isLit
-                    ? 'rgba(234, 179, 8, 0.3)'
-                    : 'rgba(255, 255, 255, 0.12)',
-                  color: isMismatch ? '#f87171' : isLit ? '#fde047' : '#94a3b8'
-                }}
-              >
-                {isMismatch ? 'MISMATCH' : isLit ? 'ĐANG BẬT' : 'ĐANG TẮT'}
-              </span>
-            </div>
-
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onToggleMismatch) onToggleMismatch();
-              }}
-              style={{
-                fontSize: '9px',
-                color: isMismatch ? '#f87171' : '#fca5a5',
-                cursor: 'pointer',
-                textAlign: 'center',
-                paddingTop: '2px',
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)'
-              }}
-            >
-              {isMismatch ? '⚠️ Đang lỗi Mismatch (Bấm để xóa)' : 'Bấm nút cơ (Test Mismatch)'}
-            </div>
-          </div>
-        </Html>
-      )}
-    </group>
-  );
-}
-
-// =========================================================================
-// 6. BỘ ĐIỀU NHIỆT SMART THERMOSTAT PHÒNG KHÁCH ([-4.5, 1.85, 0.12])
-// =========================================================================
-function LivingRoomThermostat({ position, temp, hum }) {
-  return (
-    <group position={position}>
-      <mesh castShadow>
-        <boxGeometry args={[0.42, 0.52, 0.03]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.2} />
-      </mesh>
-      <mesh position={[0, 0, 0.018]}>
-        <boxGeometry args={[0.38, 0.48, 0.005]} />
-        <meshStandardMaterial color="#020617" roughness={0.1} />
-      </mesh>
-      <Html position={[0, 0, 0.025]} transform scale={0.11}>
-        <div
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            textAlign: 'center',
-            color: '#38bdf8',
-            userSelect: 'none',
-            padding: '6px',
-            background: 'rgba(2, 6, 23, 0.85)',
-            borderRadius: '8px',
-            border: '1px solid rgba(56, 189, 248, 0.3)'
-          }}
-        >
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc' }}>
-            🌡️ {temp}°C
-          </div>
-          <div style={{ fontSize: '12px', color: '#38bdf8', marginTop: '3px' }}>
-            💧 Độ ẩm: {hum}%
-          </div>
-          <div style={{ fontSize: '9px', color: '#34d399', marginTop: '4px', fontWeight: 700 }}>
-            ● DHT11 Real-time IoT
-          </div>
-        </div>
-      </Html>
-    </group>
-  );
-}
-
-// =========================================================================
-// 7. QUẠT HÚT MÙI THÔNG MINH 5 CÁNH KHÍ ĐỘNG HỌC (CHUẨN BẢN TRƯỚC - KHÔNG CỤC ĐEN)
-// =========================================================================
-function SmartExhaustFan({
-  position,
-  rotation = [Math.PI / 2, 0, 0],
-  isFanRunning,
-  fanSpeed = 0,
-  onToggleFan,
-  showControlPad = false
-}) {
-  const propellerRef = useRef();
-  const currentSpeed = useRef(0);
-  const vortexRef = useRef();
-
-  useFrame((_, delta) => {
-    // 4 Mức tốc độ góc thực tế (rad/s) chuẩn bản trước:
-    // Mức 0: 0 rad/s (Dừng)
-    // Mức 1: 5.5 rad/s (Êm dịu, thấy rõ 5 cánh quay mượt mà)
-    // Mức 2: 15.0 rad/s (Tiêu chuẩn)
-    // Mức 3: 36.0 rad/s (Turbo cực đại)
-    const speedTargets = [0, 5.5, 15.0, 36.0];
-    const target = speedTargets[fanSpeed] !== undefined
-      ? speedTargets[fanSpeed]
-      : (isFanRunning ? 22.0 : 0);
-
-    const lerp = (a, b, t) => a + (b - a) * t;
-    currentSpeed.current = lerp(currentSpeed.current, target, Math.min(1, delta * 3.2));
-
-    if (propellerRef.current && currentSpeed.current > 0.01) {
-      propellerRef.current.rotation.y += delta * currentSpeed.current;
-    }
-
-    if (vortexRef.current && currentSpeed.current > 0.1) {
-      vortexRef.current.rotation.y -= delta * (currentSpeed.current * 1.3);
-    }
-  });
-
-  const getSpeedLabel = () => {
-    switch (fanSpeed) {
-      case 1: return 'MỨC 1 (ÊM)';
-      case 2: return 'MỨC 2 (VỪA)';
-      case 3: return 'MỨC 3 (TURBO)';
-      default: return 'ĐANG TẮT';
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (fanSpeed) {
-      case 1: return '#10b981'; // Xanh ngọc êm dịu
-      case 2: return '#0ea5e9'; // Xanh dương vừa phải
-      case 3: return '#f59e0b'; // Cam hổ phách Turbo
-      default: return '#64748b'; // Xám khi tắt
-    }
-  };
-
-  const statusColor = getStatusColor();
-
-  const handleNextSpeed = (e) => {
-    if (e) e.stopPropagation();
-    const next = (fanSpeed + 1) % 4;
-    onToggleFan(next);
-  };
-
-  return (
-    <group position={position}>
-      {/* Cụm quạt 3D xoay ngang 90 độ chuẩn bản trước */}
-      <group rotation={rotation}>
-        {/* 1. KHUNG VỎ VÀ CHAO KÍNH KHÍ ĐỘNG HỌC HIỆN ĐẠI (CHUẨN BẢN TRƯỚC, KHÔNG HỘP ĐEN) */}
-        <group onClick={handleNextSpeed} style={{ cursor: 'pointer' }}>
-          {/* Ống dẫn khí inox tròn vươn kịch trần */}
-          <mesh position={[0, 0.55, 0]} castShadow>
-            <cylinderGeometry args={[0.11, 0.11, 0.8, 24]} />
-            <meshStandardMaterial color="#cbd5e1" metalness={0.92} roughness={0.15} />
-          </mesh>
-
-          {/* Khung mô-tơ trên */}
-          <mesh position={[0, 0.16, 0]} castShadow>
-            <cylinderGeometry args={[0.22, 0.26, 0.12, 24]} />
-            <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
-          </mesh>
-
-          {/* Vòm kính cường lực pha lê trong suốt xuyên thấu (Crystal Clear Canopy) */}
-          <mesh position={[0, 0.1, 0]}>
-            <cylinderGeometry args={[0.44, 0.58, 0.04, 32]} />
-            <meshPhysicalMaterial
-              color="#bae6fd"
-              transparent
-              opacity={0.3}
-              transmission={0.92}
-              roughness={0.05}
-              thickness={0.08}
-            />
-          </mesh>
-
-          {/* Vành kim loại mạ crom sáng bóng bảo vệ ngoài */}
-          <mesh position={[0, 0.08, 0]}>
-            <torusGeometry args={[0.58, 0.015, 16, 40]} />
-            <meshStandardMaterial color="#cbd5e1" metalness={0.92} roughness={0.15} />
-          </mesh>
-
-          {/* Vành đèn Neon LED thông minh báo trạng thái cấp độ */}
-          <mesh position={[0, 0.06, 0]}>
-            <torusGeometry args={[0.49, 0.012, 16, 40]} />
-            <meshStandardMaterial
-              color={statusColor}
-              emissive={statusColor}
-              emissiveIntensity={fanSpeed > 0 ? 3.0 : 0.2}
-            />
-          </mesh>
-        </group>
-
-        {/* 2. CỤM TRỤC QUAY & 5 CÁNH QUẠT KHÍ ĐỘNG HỌC THỰC THỤ */}
-        <group ref={propellerRef} position={[0, 0, 0]} onClick={handleNextSpeed} style={{ cursor: 'pointer' }}>
-          {/* Trục quay trung tâm (Spinner Hub mạ kim loại) */}
-          <mesh castShadow>
-            <cylinderGeometry args={[0.1, 0.1, 0.08, 24]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
-          </mesh>
-          <mesh position={[0, -0.045, 0]} castShadow>
-            <sphereGeometry args={[0.1, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-            <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
-          </mesh>
-
-          {/* Đèn LED tâm trục phát sáng theo cấp độ gió */}
-          <mesh position={[0, -0.095, 0]}>
-            <sphereGeometry args={[0.035, 16, 16]} />
-            <meshStandardMaterial
-              color={statusColor}
-              emissive={statusColor}
-              emissiveIntensity={fanSpeed > 0 ? 3.5 : 0}
-            />
-          </mesh>
-
-          {/* 5 CÁNH QUẠT THIẾT KẾ KHÍ ĐỘNG HỌC (RÕ RÀNG TỪNG CÁNH) */}
-          {[0, 1, 2, 3, 4].map((i) => {
-            const angle = (i * 2 * Math.PI) / 5;
-            return (
-              <group key={i} rotation={[0, angle, 0]}>
-                {/* Cuống cánh quạt mạ Crom */}
-                <mesh position={[0.1, 0, 0]} castShadow>
-                  <cylinderGeometry args={[0.014, 0.016, 0.12, 12]} rotation={[0, 0, Math.PI / 2]} />
-                  <meshStandardMaterial color="#cbd5e1" metalness={0.9} roughness={0.1} />
-                </mesh>
-
-                {/* Thân cánh quạt vát cong theo góc nghiêng khí động học (Pitch) */}
-                <group position={[0.27, 0, 0]} rotation={[0.34, 0, 0.06]}>
-                  {/* Bản cánh quạt chính */}
-                  <RoundedBox args={[0.24, 0.012, 0.11]} radius={0.02} smoothness={3} castShadow>
-                    <meshStandardMaterial
-                      color={fanSpeed > 0 ? '#0284c7' : '#475569'}
-                      metalness={0.7}
-                      roughness={0.25}
-                    />
-                  </RoundedBox>
-
-                  {/* Phần vát thuôn nhọn ở đầu cánh (Winglet) */}
-                  <mesh position={[0.125, 0, 0.01]} rotation={[0, 0.25, 0]} castShadow>
-                    <boxGeometry args={[0.05, 0.01, 0.08]} />
-                    <meshStandardMaterial
-                      color={fanSpeed > 0 ? '#38bdf8' : '#64748b'}
-                      metalness={0.8}
-                      roughness={0.2}
-                    />
-                  </mesh>
-
-                  {/* Vạch dạ quang thể thao trên đầu cánh quạt */}
-                  <mesh position={[0.155, 0, 0.01]}>
-                    <boxGeometry args={[0.012, 0.015, 0.075]} />
-                    <meshStandardMaterial
-                      color={statusColor}
-                      emissive={statusColor}
-                      emissiveIntensity={fanSpeed > 0 ? 3.0 : 0}
-                    />
-                  </mesh>
-                </group>
-              </group>
-            );
-          })}
-        </group>
-
-        {/* 3. HIỆU ỨNG LUỒNG XOÁY KHÔNG KHÍ KHÍ ĐỘNG HỌC (3D AIRFLOW VORTEX) */}
-        {fanSpeed > 0 && (
-          <group ref={vortexRef} position={[0, -0.32, 0]}>
-            <mesh>
-              <cylinderGeometry args={[0.14, 0.44, 0.52, 24, 1, true]} />
-              <meshBasicMaterial
-                color={fanSpeed === 3 ? '#38bdf8' : '#7dd3fc'}
-                transparent
-                opacity={fanSpeed === 3 ? 0.25 : fanSpeed === 2 ? 0.16 : 0.09}
-                side={2}
-                depthWrite={false}
-              />
-            </mesh>
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.16, 0]}>
-              <ringGeometry args={[0.16, 0.42, 24]} />
-              <meshBasicMaterial
-                color="#38bdf8"
-                transparent
-                opacity={fanSpeed === 3 ? 0.35 : 0.18}
-                side={2}
-                depthWrite={false}
-              />
-            </mesh>
-          </group>
-        )}
-      </group>
-
-      {/* 4. BADGE NÚT ĐIỀU KHIỂN DẠNG PILL CHUẨN BẢN TRƯỚC (Y HỆT ẢNH 1 & 2) */}
-      <Html position={[0, 0.52, 0.1]} center distanceFactor={7}>
-        <div
-          onClick={handleNextSpeed}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 14px',
-            background: fanSpeed > 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(15, 23, 42, 0.88)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            border: fanSpeed > 0 ? `1px solid ${statusColor}` : '1px solid rgba(255, 255, 255, 0.18)',
-            borderRadius: '24px',
-            color: '#ffffff',
-            fontSize: '11px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: fanSpeed > 0 ? `0 0 18px ${statusColor}77` : '0 4px 14px rgba(0, 0, 0, 0.5)',
-            transition: 'all 0.25s ease',
-            whiteSpace: 'nowrap',
-            userSelect: 'none'
-          }}
-          title="Click để đổi cấp độ quạt (0 -> 1 -> 2 -> 3 -> 0)"
-        >
-          <span
-            style={{
-              display: 'inline-block',
-              animation: fanSpeed > 0 ? `spin ${2.2 / fanSpeed}s linear infinite` : 'none'
-            }}
-          >
-            🌪️
-          </span>
-          <span style={{ letterSpacing: '0.5px' }}>QUẠT BẾP</span>
-          <span
-            style={{
-              fontSize: '9px',
-              padding: '2px 8px',
-              background: fanSpeed > 0 ? statusColor : 'rgba(255, 255, 255, 0.15)',
-              color: fanSpeed === 3 ? '#000000' : '#ffffff',
-              borderRadius: '10px',
-              fontWeight: 800
-            }}
-          >
-            {getSpeedLabel()}
-          </span>
-        </div>
-      </Html>
-
-      {/* 5. NÚT CHỌN 4 CẤP ĐỘ NHANH KHI ĐỨNG TRONG BẾP (FIRST PERSON) */}
-      {showControlPad && (
-        <Html position={[0, -0.62, 0.1]} center distanceFactor={6.5}>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'rgba(15, 23, 42, 0.94)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: fanSpeed > 0 ? `1px solid ${statusColor}` : '1px solid rgba(255, 255, 255, 0.18)',
-              borderRadius: '14px',
-              padding: '6px 10px',
-              display: 'flex',
-              gap: '4px',
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
-              userSelect: 'none'
-            }}
-          >
-            {[
-              { lvl: 0, label: 'Tắt' },
-              { lvl: 1, label: 'Mức 1' },
-              { lvl: 2, label: 'Mức 2' },
-              { lvl: 3, label: 'Turbo' }
-            ].map((item) => {
-              const isSelected = fanSpeed === item.lvl;
-              return (
-                <button
-                  key={item.lvl}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFan(item.lvl);
-                  }}
-                  style={{
-                    padding: '4px 7px',
-                    borderRadius: '8px',
-                    border: isSelected ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.1)',
-                    backgroundColor: isSelected ? '#0284c7' : 'rgba(30, 41, 59, 0.7)',
-                    color: isSelected ? '#ffffff' : '#94a3b8',
-                    fontSize: '10px',
-                    fontWeight: isSelected ? 800 : 500,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        </Html>
-      )}
-    </group>
-  );
-}
-
-// =========================================================================
-// 8. NỘI THẤT LUXURY ARCHVIZ 4 PHÒNG (8x8 UNITS MỖI PHÒNG, TỔNG 16x16)
-// =========================================================================
-
-// --- 1. PHÒNG KHÁCH (LIVING ROOM: X [-8, 0], Z [0, 8]) ---
-function LivingRoomArchViz({ rugTex, tvTex, artTex }) {
-  return (
-    <group>
-      {/* Thảm dệt sợi họa tiết quả trám */}
-      <mesh position={[-4.5, 0.02, 4.2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[4.4, 3.4]} />
-        <meshStandardMaterial map={rugTex} roughness={0.9} />
-      </mesh>
-
-      {/* Vách ốp lam gỗ tiêu âm sau TV (Vertical Acoustic Wood Slats) */}
-      <group position={[-7.9, 1.75, 4.2]}>
-        <mesh position={[-0.04, 0, 0]}>
-          <boxGeometry args={[0.02, 3.2, 3.8]} />
-          <meshStandardMaterial color="#0b0f19" roughness={0.9} />
-        </mesh>
-        {/* 24 thanh nan gỗ dọc tự nhiên */}
-        {Array.from({ length: 24 }).map((_, idx) => (
-          <mesh key={idx} position={[0, 0, -1.8 + idx * 0.155]}>
-            <boxGeometry args={[0.04, 3.2, 0.08]} />
-            <meshStandardMaterial color="#854d0e" roughness={0.4} />
-          </mesh>
-        ))}
-        {/* Dải LED hắt sáng tường ấm cúng (Warm Amber LED Cove Light) */}
-        <mesh position={[0.02, 0, -1.9]}>
-          <boxGeometry args={[0.02, 3.1, 0.02]} />
-          <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
-        </mesh>
-        <mesh position={[0.02, 0, 1.9]}>
-          <boxGeometry args={[0.02, 3.1, 0.02]} />
-          <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
-        </mesh>
-      </group>
-
-      {/* Kệ TV treo tường & TV OLED viền siêu mỏng */}
-      <group position={[-7.65, 0, 4.2]}>
-        <RoundedBox args={[0.45, 0.38, 3.4]} radius={0.03} smoothness={3} position={[0, 0.28, 0]} castShadow>
-          <meshStandardMaterial color="#0f172a" roughness={0.3} metalness={0.2} />
-        </RoundedBox>
-        {/* Màn hình TV OLED phẳng sát nan gỗ */}
-        <mesh position={[0.04, 1.35, 0]} castShadow>
-          <boxGeometry args={[0.04, 1.25, 2.3]} />
-          <meshStandardMaterial color="#000000" metalness={0.9} roughness={0.1} />
-        </mesh>
-        {/* Màn hình phát nội dung Smart Home Dashboard phát sáng rực rỡ */}
-        <mesh position={[0.065, 1.35, 0]}>
-          <boxGeometry args={[0.005, 1.18, 2.22]} />
-          <meshStandardMaterial
-            map={tvTex}
-            emissive="#0284c7"
-            emissiveIntensity={0.65}
-            roughness={0.2}
-          />
-        </mesh>
-        {/* Soundbar rạp hát */}
-        <RoundedBox args={[0.12, 0.07, 1.5]} radius={0.02} smoothness={2} position={[0.08, 0.52, 0]} castShadow>
-          <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
-        </RoundedBox>
-      </group>
-
-      {/* Sofa góc chữ L cao cấp với đệm rời, tựa lưng & gối nhấn */}
-      <group position={[-3.2, 0, 4.2]}>
-        {/* Khung đế sofa chân kim loại đen */}
-        <RoundedBox args={[1.3, 0.22, 3.2]} radius={0.04} smoothness={3} position={[0, 0.15, 0]} castShadow>
-          <meshStandardMaterial color="#090d16" metalness={0.8} />
-        </RoundedBox>
-        {/* 3 Đệm ngồi riêng biệt */}
-        {[-0.95, 0, 0.95].map((z, i) => (
-          <RoundedBox key={i} args={[1.15, 0.26, 0.98]} radius={0.06} smoothness={4} position={[-0.05, 0.38, z]} castShadow receiveShadow>
-            <meshStandardMaterial color="#1e293b" roughness={0.7} />
-          </RoundedBox>
-        ))}
-        {/* Góc L nối dài */}
-        <RoundedBox args={[1.6, 0.26, 1.2]} radius={0.06} smoothness={4} position={[-1.1, 0.38, 1.0]} castShadow receiveShadow>
-          <meshStandardMaterial color="#1e293b" roughness={0.7} />
-        </RoundedBox>
-        {/* Tựa lưng dày dặn */}
-        <RoundedBox args={[0.26, 0.55, 3.2]} radius={0.06} smoothness={3} position={[0.55, 0.65, 0]} castShadow>
-          <meshStandardMaterial color="#0f172a" roughness={0.8} />
-        </RoundedBox>
-        {/* Gối tựa lưng vàng mù tạt & xanh đại dương */}
-        <RoundedBox args={[0.18, 0.38, 0.5]} radius={0.04} smoothness={3} position={[0.35, 0.62, -0.7]} rotation={[0, 0.15, -0.1]}>
-          <meshStandardMaterial color="#eab308" roughness={0.6} />
-        </RoundedBox>
-        <RoundedBox args={[0.18, 0.38, 0.5]} radius={0.04} smoothness={3} position={[0.35, 0.62, 0.3]} rotation={[0, -0.15, -0.1]}>
-          <meshStandardMaterial color="#0284c7" roughness={0.6} />
-        </RoundedBox>
-      </group>
-
-      {/* Bàn trà 2 tầng: Kính đen khói + Tầng gỗ óc chó */}
-      <group position={[-5.0, 0, 4.2]}>
-        {/* Tầng đáy gỗ óc chó */}
-        <RoundedBox args={[1.4, 0.05, 0.85]} radius={0.02} smoothness={3} position={[0, 0.16, 0]} castShadow>
-          <meshStandardMaterial color="#5c381e" roughness={0.4} />
-        </RoundedBox>
-        {/* Chân kim loại */}
-        {[-0.62, 0.62].map((x, i) =>
-          [-0.34, 0.34].map((z, j) => (
-            <mesh key={`${i}-${j}`} position={[x, 0.22, z]}>
-              <cylinderGeometry args={[0.018, 0.018, 0.44, 12]} />
-              <meshStandardMaterial color="#090d16" metalness={0.95} />
-            </mesh>
-          ))
-        )}
-        {/* Mặt bàn kính khói cường lực */}
-        <RoundedBox args={[1.44, 0.025, 0.9]} radius={0.03} smoothness={3} position={[0, 0.44, 0]} castShadow>
-          <meshPhysicalMaterial
-            color="#334155"
-            transmission={0.8}
-            opacity={0.65}
-            transparent
-            roughness={0.05}
-          />
-        </RoundedBox>
-        {/* Cuốn sách trang trí & ly sứ */}
-        <mesh position={[-0.2, 0.47, 0.1]}>
-          <boxGeometry args={[0.26, 0.04, 0.35]} />
-          <meshStandardMaterial color="#d97706" />
-        </mesh>
-      </group>
-
-      {/* Tranh canvas nghệ thuật trừu tượng trên tường phòng khách */}
-      <group position={[-2.8, 2.1, 7.85]}>
-        <mesh castShadow>
-          <boxGeometry args={[1.8, 1.2, 0.04]} />
-          <meshStandardMaterial map={artTex} />
-        </mesh>
-        <mesh position={[0, 0, -0.01]}>
-          <boxGeometry args={[1.86, 1.26, 0.02]} />
-          <meshStandardMaterial color="#d97706" metalness={0.8} roughness={0.2} />
-        </mesh>
-      </group>
-
-      {/* Đèn cây đứng góc phòng (Floor Lamp) phát ánh sáng ấm */}
-      <group position={[-7.1, 0, 7.1]}>
-        <mesh position={[0, 0.03, 0]}>
-          <cylinderGeometry args={[0.25, 0.28, 0.06, 24]} />
-          <meshStandardMaterial color="#0f172a" metalness={0.9} />
-        </mesh>
-        <mesh position={[0, 1.0, 0]}>
-          <cylinderGeometry args={[0.02, 0.02, 1.9, 12]} />
-          <meshStandardMaterial color="#d97706" metalness={0.9} />
-        </mesh>
-        <mesh position={[0, 1.85, 0]}>
-          <cylinderGeometry args={[0.26, 0.36, 0.45, 24]} />
-          <meshStandardMaterial color="#fef08a" emissive="#f59e0b" emissiveIntensity={0.8} />
-        </mesh>
-        <pointLight position={[0, 1.8, 0]} color="#fef08a" intensity={1.8} distance={4} />
-      </group>
-    </group>
-  );
-}
-
-// --- 2. PHÒNG NGỦ (BEDROOM: X [-8, 0], Z [-8, 0]) ---
-function BedroomArchViz({ rugTex, artTex }) {
-  return (
-    <group>
-      {/* Thảm dệt êm chân dưới giường */}
-      <mesh position={[-4.2, 0.02, -4.5]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[3.8, 3.8]} />
-        <meshStandardMaterial map={rugTex} roughness={0.9} />
-      </mesh>
-
-      {/* Vách ốp đầu giường kết hợp nan gỗ dọc sang trọng */}
-      <group position={[-4.2, 1.8, -7.9]}>
-        {/* Nền đệm nỉ xám */}
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[3.6, 2.8, 0.06]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.8} />
-        </mesh>
-        {/* Nan gỗ nhấn 2 bên */}
-        {[-1.6, 1.6].map((gx, i) => (
-          <group key={i} position={[gx, 0, 0.04]}>
-            {[-0.2, -0.07, 0.07, 0.2].map((sx, j) => (
-              <mesh key={j} position={[sx, 0, 0]}>
-                <boxGeometry args={[0.045, 2.7, 0.03]} />
-                <meshStandardMaterial color="#854d0e" roughness={0.4} />
-              </mesh>
-            ))}
-          </group>
-        ))}
-        {/* Dải LED hắt sáng đầu giường (Underglow / Headboard LED) */}
-        <mesh position={[0, 1.35, 0.04]}>
-          <boxGeometry args={[3.4, 0.025, 0.02]} />
-          <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.85} />
-        </mesh>
-      </group>
-
-      {/* Giường đôi bọc nệm nỉ với đèn LED hắt gầm giường (Floating Bed) */}
-      <group position={[-4.2, 0, -4.8]}>
-        {/* Đèn LED hắt gầm giường */}
-        <mesh position={[0, 0.04, 0]}>
-          <boxGeometry args={[2.4, 0.02, 2.6]} />
-          <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.7} />
-        </mesh>
-        {/* Khung giường gỗ sồi */}
-        <RoundedBox args={[2.5, 0.34, 2.7]} radius={0.05} smoothness={3} position={[0, 0.18, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color="#451a03" roughness={0.5} />
-        </RoundedBox>
-        {/* Nệm trắng cao cấp */}
-        <RoundedBox args={[2.32, 0.28, 2.5]} radius={0.05} smoothness={4} position={[0, 0.44, 0.05]} castShadow>
-          <meshStandardMaterial color="#f8fafc" roughness={0.8} />
-        </RoundedBox>
-        {/* Chăn phủ màu xanh hoàng gia */}
-        <RoundedBox args={[2.34, 0.14, 1.6]} radius={0.05} smoothness={3} position={[0, 0.56, 0.5]} castShadow>
-          <meshStandardMaterial color="#1e3a8a" roughness={0.7} />
-        </RoundedBox>
-        {/* Khăn vắt cuối giường màu be */}
-        <RoundedBox args={[2.36, 0.05, 0.5]} radius={0.02} smoothness={2} position={[0, 0.65, 1.05]}>
-          <meshStandardMaterial color="#d4b996" roughness={0.8} />
-        </RoundedBox>
-        {/* 4 Chiếc gối xếp 2 tầng êm ái */}
-        {[-0.65, 0.65].map((x, i) => (
-          <group key={i}>
-            <RoundedBox args={[0.75, 0.16, 0.48]} radius={0.05} smoothness={3} position={[x, 0.65, -0.9]} rotation={[0.2, 0, 0]}>
-              <meshStandardMaterial color="#ffffff" roughness={0.9} />
-            </RoundedBox>
-            <RoundedBox args={[0.65, 0.14, 0.4]} radius={0.04} smoothness={3} position={[x, 0.72, -0.6]} rotation={[0.35, 0, 0]}>
-              <meshStandardMaterial color="#38bdf8" roughness={0.8} />
-            </RoundedBox>
-          </group>
-        ))}
-      </group>
-
-      {/* 2 Tab đầu giường có đèn ngủ trụ tròn phát sáng */}
-      {[-6.0, -2.4].map((x, i) => (
-        <group key={i} position={[x, 0, -6.6]}>
-          <RoundedBox args={[0.62, 0.48, 0.55]} radius={0.04} smoothness={3} position={[0, 0.24, 0]} castShadow>
-            <meshStandardMaterial color="#1e293b" roughness={0.4} />
-          </RoundedBox>
-          {/* Đèn ngủ thân gốm + chao đèn trụ tròn ấm áp */}
-          <mesh position={[0, 0.54, 0]}>
-            <cylinderGeometry args={[0.08, 0.12, 0.16, 16]} />
-            <meshStandardMaterial color="#d97706" metalness={0.8} />
-          </mesh>
-          <mesh position={[0, 0.72, 0]}>
-            <cylinderGeometry args={[0.14, 0.14, 0.24, 24]} />
-            <meshStandardMaterial color="#fef08a" emissive="#f59e0b" emissiveIntensity={0.7} />
-          </mesh>
-          <pointLight position={[0, 0.72, 0]} color="#fef08a" intensity={0.9} distance={2.5} />
-        </group>
-      ))}
-
-      {/* Tủ quần áo cánh kính đen khói kịch trần (Floor-to-Ceiling Wardrobe) */}
-      <group position={[-7.5, 1.75, -3.2]}>
-        <mesh castShadow>
-          <boxGeometry args={[0.75, 3.48, 2.8]} />
-          <meshStandardMaterial color="#0b0f19" roughness={0.5} />
-        </mesh>
-        {/* Cánh kính đen khói có tay nắm vàng */}
-        <mesh position={[0.39, 0, 0]}>
-          <boxGeometry args={[0.02, 3.3, 2.7]} />
-          <meshPhysicalMaterial color="#1e293b" transmission={0.65} opacity={0.7} transparent roughness={0.1} />
-        </mesh>
-        {/* Tay nắm đứng vàng kim */}
-        <mesh position={[0.41, 0, -0.1]}>
-          <boxGeometry args={[0.02, 1.2, 0.02]} />
-          <meshStandardMaterial color="#f59e0b" metalness={0.9} />
-        </mesh>
-        <mesh position={[0.41, 0, 0.1]}>
-          <boxGeometry args={[0.02, 1.2, 0.02]} />
-          <meshStandardMaterial color="#f59e0b" metalness={0.9} />
-        </mesh>
-      </group>
-    </group>
-  );
-}
-
-// --- 3. PHÒNG BẾP (KITCHEN: X [0, 8], Z [0, 8]) ---
-function KitchenArchViz() {
-  return (
-    <group>
-      {/* Hệ tủ bếp dưới & Mặt đá thạch anh đen cao cấp */}
-      <group position={[4.2, 0, 6.8]}>
-        {/* Thùng tủ dưới màu ghi chì */}
-        <RoundedBox args={[4.4, 0.82, 0.85]} radius={0.03} smoothness={3} position={[0, 0.41, 0]} castShadow receiveShadow>
-          <meshStandardMaterial color="#1e293b" roughness={0.4} />
-        </RoundedBox>
-        {/* Mặt đá thạch anh đen bóng */}
-        <RoundedBox args={[4.46, 0.08, 0.9]} radius={0.02} smoothness={3} position={[0, 0.85, 0]} castShadow>
-          <meshStandardMaterial color="#090d16" roughness={0.15} metalness={0.2} />
-        </RoundedBox>
-
-        {/* Bếp từ âm 2 vùng nấu với vòng tròn đỏ rực */}
-        <mesh position={[-0.6, 0.9, -0.05]}>
-          <boxGeometry args={[0.92, 0.015, 0.55]} />
-          <meshStandardMaterial color="#020617" roughness={0.1} metalness={0.8} />
-        </mesh>
-        {[-0.85, -0.35].map((bx, i) => (
-          <mesh key={i} position={[bx, 0.915, -0.05]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.12, 0.16, 24]} />
-            <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.85} side={THREE.DoubleSide} />
-          </mesh>
-        ))}
-
-        {/* Bồn rửa chén inox & Vòi nước cổ ngỗng uốn cong */}
-        <mesh position={[1.05, 0.89, -0.05]}>
-          <boxGeometry args={[0.8, 0.02, 0.5]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.95} roughness={0.15} />
-        </mesh>
-        <mesh position={[1.05, 1.15, -0.22]}>
-          <cylinderGeometry args={[0.02, 0.02, 0.4, 12]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.95} roughness={0.1} />
-        </mesh>
-
-        {/* Tay nắm kim loại ngăn kéo tủ dưới */}
-        {[-1.5, -0.5, 0.5, 1.5].map((hx, i) => (
-          <mesh key={i} position={[hx, 0.45, -0.44]}>
-            <boxGeometry args={[0.35, 0.02, 0.03]} />
-            <meshStandardMaterial color="#e2e8f0" metalness={0.95} />
-          </mesh>
-        ))}
-      </group>
-
-      {/* HỆ TỦ BẾP TRÊN HAI BÊN (CHỪA KHOẢNG KHÔNG THOÁNG ĐÃNG CHO QUẠT HÚT MÙI - KHÔNG CỤC ĐEN) */}
-      <group position={[4.2, 2.5, 6.8]}>
-        {/* Tủ trên bên trái */}
-        <group position={[-1.6, 0, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[1.2, 0.85, 0.42]} />
-            <meshStandardMaterial color="#334155" roughness={0.3} />
-          </mesh>
-          {/* LED ấm hắt dưới tủ trái */}
-          <mesh position={[0, -0.43, -0.12]}>
-            <boxGeometry args={[1.15, 0.02, 0.05]} />
-            <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
-          </mesh>
-        </group>
-
-        {/* Tủ trên bên phải (khu vực bồn rửa bát) */}
-        <group position={[1.2, 0, 0]}>
-          <mesh castShadow>
-            <boxGeometry args={[2.0, 0.85, 0.42]} />
-            <meshStandardMaterial color="#334155" roughness={0.3} />
-          </mesh>
-          {/* LED ấm hắt dưới tủ phải */}
-          <mesh position={[0, -0.43, -0.12]}>
-            <boxGeometry args={[1.95, 0.02, 0.05]} />
-            <meshStandardMaterial color="#f59e0b" emissive="#f59e0b" emissiveIntensity={0.8} />
-          </mesh>
-          <pointLight position={[0, -0.5, -0.12]} color="#fef08a" intensity={1.2} distance={2.8} />
-        </group>
-      </group>
-
-      {/* Tủ lạnh Smart Refrigerator 2 cánh dung tích lớn */}
-      <group position={[7.3, 1.1, 6.8]}>
-        <RoundedBox args={[0.88, 2.25, 0.85]} radius={0.04} smoothness={3} castShadow>
-          <meshStandardMaterial color="#334155" metalness={0.88} roughness={0.2} />
-        </RoundedBox>
-        {/* Bảng điều khiển cảm ứng & Khay lấy nước ngoài */}
-        <mesh position={[-0.45, 0.25, 0.15]}>
-          <boxGeometry args={[0.02, 0.35, 0.25]} />
-          <meshStandardMaterial color="#020617" roughness={0.1} />
-        </mesh>
-        <mesh position={[-0.46, 0.32, 0.15]}>
-          <boxGeometry args={[0.005, 0.08, 0.18]} />
-          <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={0.6} />
-        </mesh>
-      </group>
-
-      {/* Bàn ăn gỗ tự nhiên & 4 Ghế ăn điêu khắc hiện đại */}
-      <group position={[3.6, 0, 2.6]}>
-        <RoundedBox args={[1.9, 0.07, 1.15]} radius={0.03} smoothness={3} position={[0, 0.74, 0]} castShadow>
-          <meshStandardMaterial color="#854d0e" roughness={0.35} />
-        </RoundedBox>
-        {[-0.82, 0.82].map((x, i) =>
-          [-0.48, 0.48].map((z, j) => (
-            <mesh key={`${i}-${j}`} position={[x, 0.37, z]}>
-              <cylinderGeometry args={[0.028, 0.028, 0.74, 10]} />
-              <meshStandardMaterial color="#090d16" metalness={0.8} />
-            </mesh>
-          ))
-        )}
-        {/* 4 Ghế ăn bọc đệm êm ái */}
-        {[
-          { pos: [-0.5, 0, -0.85], rot: 0 },
-          { pos: [0.5, 0, -0.85], rot: 0 },
-          { pos: [-0.5, 0, 0.85], rot: Math.PI },
-          { pos: [0.5, 0, 0.85], rot: Math.PI }
-        ].map((chair, idx) => (
-          <group key={idx} position={chair.pos} rotation={[0, chair.rot, 0]}>
-            <RoundedBox args={[0.42, 0.06, 0.42]} radius={0.02} smoothness={2} position={[0, 0.45, 0]} castShadow>
-              <meshStandardMaterial color="#1e293b" />
-            </RoundedBox>
-            <RoundedBox args={[0.42, 0.45, 0.05]} radius={0.02} smoothness={2} position={[0, 0.68, -0.19]} castShadow>
-              <meshStandardMaterial color="#0f172a" />
-            </RoundedBox>
-            {[-0.18, 0.18].map((cx, k) => (
-              <mesh key={k} position={[cx, 0.22, 0]}>
-                <cylinderGeometry args={[0.015, 0.015, 0.45, 8]} />
-                <meshStandardMaterial color="#090d16" metalness={0.9} />
-              </mesh>
-            ))}
-          </group>
-        ))}
-      </group>
-    </group>
-  );
-}
-
-// --- 4. BAN CÔNG (BALCONY: X [0, 8], Z [-8, 0]) ---
-// Chậu cây cảnh Monstera / Cọ nhiều tầng lá thực thụ (Xóa bỏ hình cầu tròn đơn điệu)
-function DetailedPlantPot({ position, scale = 1.0 }) {
-  return (
-    <group position={position} scale={scale}>
-      {/* Chậu đất nung Terracotta cao cấp */}
-      <mesh position={[0, 0.35, 0]} castShadow>
-        <cylinderGeometry args={[0.32, 0.24, 0.7, 24]} />
-        <meshStandardMaterial color="#e2e8f0" roughness={0.3} />
-      </mesh>
-      {/* Đất mùn trong chậu */}
-      <mesh position={[0, 0.68, 0]}>
-        <cylinderGeometry args={[0.3, 0.3, 0.04, 16]} />
-        <meshStandardMaterial color="#2d1c10" roughness={0.95} />
-      </mesh>
-      {/* 8 Phiến lá cọ / Monstera xoè tán nhiều góc độ */}
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg, i) => {
-        const rad = (deg * Math.PI) / 180;
-        return (
-          <group key={i} rotation={[0, rad, 0]}>
-            {/* Cuống lá mảnh */}
-            <mesh position={[0.2, 0.85, 0]} rotation={[0, 0, -0.45]} castShadow>
-              <cylinderGeometry args={[0.01, 0.014, 0.45, 8]} />
-              <meshStandardMaterial color="#166534" />
-            </mesh>
-            {/* Tán lá bản rộng rủ nhẹ */}
-            <mesh position={[0.42, 1.05, 0]} rotation={[0.2, 0, -0.65]} castShadow>
-              <boxGeometry args={[0.45, 0.01, 0.24]} />
-              <meshStandardMaterial color={i % 2 === 0 ? '#15803d' : '#16a34a'} roughness={0.5} />
-            </mesh>
-          </group>
-        );
-      })}
-    </group>
-  );
-}
-
-function BalconyArchViz() {
-  return (
-    <group>
-      {/* Ghế mây đan ngoài trời (Rattan Outdoor Lounge Armchairs) */}
-      <group position={[5.2, 0, -4.5]}>
-        <RoundedBox args={[1.1, 0.42, 1.05]} radius={0.06} smoothness={3} position={[0, 0.25, 0]} castShadow>
-          <meshStandardMaterial color="#475569" roughness={0.8} />
-        </RoundedBox>
-        <RoundedBox args={[1.1, 0.52, 0.18]} radius={0.05} smoothness={3} position={[0, 0.62, -0.45]} castShadow>
-          <meshStandardMaterial color="#334155" />
-        </RoundedBox>
-        {/* Đệm ngồi màu kem */}
-        <RoundedBox args={[0.95, 0.12, 0.85]} radius={0.04} smoothness={3} position={[0, 0.48, 0]}>
-          <meshStandardMaterial color="#f1f5f9" roughness={0.7} />
-        </RoundedBox>
-      </group>
-
-      {/* Bàn trà ngoài trời bằng gỗ Teak tròn */}
-      <group position={[3.4, 0, -4.5]}>
-        <mesh position={[0, 0.45, 0]} castShadow>
-          <cylinderGeometry args={[0.48, 0.48, 0.05, 24]} />
-          <meshStandardMaterial color="#784521" roughness={0.4} />
-        </mesh>
-        <mesh position={[0, 0.22, 0]}>
-          <cylinderGeometry args={[0.04, 0.04, 0.45, 12]} />
-          <meshStandardMaterial color="#090d16" metalness={0.9} />
-        </mesh>
-      </group>
-
-      {/* Các chậu cây cảnh Monstera tán lá thật ở các góc */}
-      <DetailedPlantPot position={[1.5, 0, -7.0]} scale={1.1} />
-      <DetailedPlantPot position={[7.0, 0, -7.0]} scale={1.0} />
-      <DetailedPlantPot position={[7.0, 0, -2.5]} scale={1.05} />
-      {/* Cây xanh tiền cảnh ban công (Nhìn thấy trong ảnh góc nhìn First-Person) */}
-      <DetailedPlantPot position={[2.4, 0, -2.2]} scale={0.95} />
-
-      {/* Cảm biến ánh sáng tự nhiên gắn trên lan can */}
-      <group position={[7.8, 1.15, -4.0]}>
-        <mesh castShadow>
-          <cylinderGeometry args={[0.08, 0.08, 0.08, 16]} />
-          <meshStandardMaterial color="#0f172a" />
-        </mesh>
-        <mesh position={[0, 0.05, 0]}>
-          <sphereGeometry args={[0.06, 14, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={0.8} />
-        </mesh>
-      </group>
-    </group>
-  );
-}
-
-// =========================================================================
-// 9. NẸP CHÂN TƯỜNG (BASEBOARDS) & NẸP CHỈ TRẦN KIẾN TRÚC
-// =========================================================================
-function ArchitecturalSkirtingAndTrims() {
-  return (
-    <group>
-      {/* Len chân tường vân gỗ sang trọng dọc các tường bao (y = 0.06) */}
-      <mesh position={[-4, 0.06, -7.9]}>
-        <boxGeometry args={[8.0, 0.12, 0.04]} />
-        <meshStandardMaterial color="#1e293b" />
-      </mesh>
-      <mesh position={[-7.9, 0.06, 0]}>
-        <boxGeometry args={[0.04, 0.12, 16.0]} />
-        <meshStandardMaterial color="#1e293b" />
-      </mesh>
-      {/* Len tường chữ thập */}
-      <mesh position={[-5.35, 0.06, 0.08]}>
-        <boxGeometry args={[5.3, 0.12, 0.04]} />
-        <meshStandardMaterial color="#1e293b" />
-      </mesh>
-      <mesh position={[-0.65, 0.06, 0.08]}>
-        <boxGeometry args={[1.3, 0.12, 0.04]} />
-        <meshStandardMaterial color="#1e293b" />
-      </mesh>
-    </group>
-  );
-}
-
-// =========================================================================
-// 10. KIẾN TRÚC TOÀN CẢNH CĂN HỘ 16x16 UNITS & HỆ THỐNG TƯỜNG CẮT NỬA
-// =========================================================================
 export default function Apartment3D({
   twinData,
   onToggle,
   onToggleMismatch,
-  viewMode,
+  viewMode = 'overview',
   setViewMode,
-  autoRotate
+  autoRotate = false
 }) {
-  const reported = twinData.reported || {};
-  const mismatch = twinData.mismatch || {};
+  const containerRef = useRef(null);
+  const hotspotsLayerRef = useRef(null);
 
-  const isFirstPerson = !!ROOM_CONFIG[viewMode];
+  const threeRefs = useRef({
+    scene: null,
+    camera: null,
+    renderer: null,
+    animFrameId: null,
+    roomPointLights: {},
+    roomBulbMeshes: {},
+    wallSwitchLeds: {},
+    fanBladesMesh: null,
+    buzzerBeaconMesh: null,
+    buzzerPointLight: null,
+    ceilingGroup: null,
+    frontCutawayWallsGroup: null,
+    poolWaterMesh: null,
+    proceduralTextures: {},
+    hotspotItems: [],
+    // Camera parameters
+    targetCameraFov: 46,
+    orbitTarget: new THREE.Vector3(0, 1.1, 0),
+    targetOrbitCenter: new THREE.Vector3(0, 1.1, 0),
+    orbitSpherical: { radius: 24.5, phi: Math.PI / 3.05, theta: Math.PI / 4.2 },
+    targetSpherical: { radius: 24.5, phi: Math.PI / 3.05, theta: Math.PI / 4.2 },
+    fpPosition: new THREE.Vector3(-1.8, 1.72, 5.8),
+    targetFpPosition: new THREE.Vector3(-1.8, 1.72, 5.8),
+    fpYaw: -1.05,
+    fpPitch: -0.04,
+    targetFpYaw: -1.05,
+    targetFpPitch: -0.04,
+    isPointerDown: false,
+    prevPointer: { x: 0, y: 0 },
+    keysPressed: {},
+    currentMode: 'overview'
+  });
 
-  // Khởi tạo các Procedural Textures cao cấp một lần duy nhất qua useMemo
-  const woodFloorTex = useMemo(() => createWoodFloorTexture(), []);
-  const marbleTileTex = useMemo(() => createMarbleTileTexture(), []);
-  const teakDeckTex = useMemo(() => createTeakDeckTexture(), []);
-  const livingRugTex = useMemo(() => createRugTexture('#1e293b', '#0284c7'), []);
-  const bedRugTex = useMemo(() => createRugTexture('#0f172a', '#d97706'), []);
-  const tvScreenTex = useMemo(() => createTVScreenTexture(), []);
-  const artTex = useMemo(() => createAbstractArtTexture(), []);
+  const callbacksRef = useRef({
+    onToggle,
+    onToggleMismatch,
+    setViewMode,
+    twinData,
+    viewMode,
+    autoRotate
+  });
+
+  useEffect(() => {
+    callbacksRef.current = {
+      onToggle,
+      onToggleMismatch,
+      setViewMode,
+      twinData,
+      viewMode,
+      autoRotate
+    };
+  }, [onToggle, onToggleMismatch, setViewMode, twinData, viewMode, autoRotate]);
+
+  // Procedural Canvas Textures
+  const createProceduralTextures = useCallback((renderer) => {
+    const maxAnisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;
+    const tuneTex = (tex, rx = 1, ry = 1) => {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(rx, ry);
+      tex.anisotropy = maxAnisotropy;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      return tex;
+    };
+
+    // 0. Fabric & Wall Plaster Bump Map
+    const fabricCanvas = document.createElement('canvas');
+    fabricCanvas.width = 256;
+    fabricCanvas.height = 256;
+    const fCtx = fabricCanvas.getContext('2d');
+    fCtx.fillStyle = '#808080';
+    fCtx.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 2) {
+      for (let x = 0; x < 256; x += 2) {
+        const v = 115 + Math.floor(Math.random() * 25) + ((x + y) % 4 === 0 ? 12 : -8);
+        fCtx.fillStyle = `rgb(${v},${v},${v})`;
+        fCtx.fillRect(x, y, 2, 2);
+      }
+    }
+    const fabricBumpTex = tuneTex(new THREE.CanvasTexture(fabricCanvas), 10, 10);
+
+    // 1. Warm Walnut Hardwood Planks
+    const woodCanvas = document.createElement('canvas');
+    woodCanvas.width = 512;
+    woodCanvas.height = 512;
+    const wCtx = woodCanvas.getContext('2d');
+    wCtx.fillStyle = '#7c4728';
+    wCtx.fillRect(0, 0, 512, 512);
+    const planks = 8;
+    const pH = 512 / planks;
+    for (let i = 0; i < planks; i++) {
+      const y = i * pH;
+      const shades = ['#8a5230', '#784425', '#824b2a', '#6e3d20'];
+      wCtx.fillStyle = shades[i % shades.length];
+      wCtx.fillRect(0, y, 512, pH - 2);
+      wCtx.strokeStyle = 'rgba(45, 20, 8, 0.22)';
+      wCtx.lineWidth = 1.8;
+      for (let g = 0; g < 16; g++) {
+        wCtx.beginPath();
+        const gy = y + Math.random() * (pH - 4);
+        wCtx.moveTo(0, gy);
+        wCtx.bezierCurveTo(170, gy + (Math.random() * 5 - 2.5), 340, gy + (Math.random() * 5 - 2.5), 512, gy);
+        wCtx.stroke();
+      }
+      const jointX = ((i * 173) % 400) + 50;
+      wCtx.fillStyle = '#3b1d0e';
+      wCtx.fillRect(jointX, y, 2, pH);
+      wCtx.fillRect(0, y + pH - 2, 512, 2);
+    }
+    const woodTex = tuneTex(new THREE.CanvasTexture(woodCanvas), 3.5, 3.5);
+
+    // 2. Calacatta Marble Tiles (Kitchen)
+    const tileCanvas = document.createElement('canvas');
+    tileCanvas.width = 512;
+    tileCanvas.height = 512;
+    const tCtx = tileCanvas.getContext('2d');
+    tCtx.fillStyle = '#cbd5e1';
+    tCtx.fillRect(0, 0, 512, 512);
+    const tCount = 4;
+    const tSize = 512 / tCount;
+    for (let r = 0; r < tCount; r++) {
+      for (let c = 0; c < tCount; c++) {
+        const tx = c * tSize;
+        const ty = r * tSize;
+        const grad = tCtx.createLinearGradient(tx, ty, tx + tSize, ty + tSize);
+        grad.addColorStop(0, '#f8fafc');
+        grad.addColorStop(0.5, '#f1f5f9');
+        grad.addColorStop(1, '#e2e8f0');
+        tCtx.fillStyle = grad;
+        tCtx.fillRect(tx + 2, ty + 2, tSize - 4, tSize - 4);
+        tCtx.strokeStyle = 'rgba(148, 163, 184, 0.32)';
+        tCtx.lineWidth = 1.5;
+        tCtx.beginPath();
+        tCtx.moveTo(tx + 8, ty + tSize * 0.25);
+        tCtx.quadraticCurveTo(tx + tSize * 0.5, ty + tSize * 0.55, tx + tSize - 8, ty + tSize * 0.85);
+        tCtx.stroke();
+      }
+    }
+    const tileTex = tuneTex(new THREE.CanvasTexture(tileCanvas), 2.5, 2.5);
+
+    // 3. Outdoor Teak Decking Slats (Balcony & Pool)
+    const deckCanvas = document.createElement('canvas');
+    deckCanvas.width = 512;
+    deckCanvas.height = 512;
+    const dCtx = deckCanvas.getContext('2d');
+    dCtx.fillStyle = '#241409';
+    dCtx.fillRect(0, 0, 512, 512);
+    const slats = 14;
+    const sH = 512 / slats;
+    for (let i = 0; i < slats; i++) {
+      dCtx.fillStyle = i % 2 === 0 ? '#704020' : '#613619';
+      dCtx.fillRect(0, i * sH, 512, sH - 3);
+    }
+    const deckTex = tuneTex(new THREE.CanvasTexture(deckCanvas), 3, 3);
+
+    // 4. Smart TV UI Texture
+    const tvCanvas = document.createElement('canvas');
+    tvCanvas.width = 512;
+    tvCanvas.height = 256;
+    const tvCtx = tvCanvas.getContext('2d');
+    const tvGrad = tvCtx.createLinearGradient(0, 0, 512, 256);
+    tvGrad.addColorStop(0, '#0369a1');
+    tvGrad.addColorStop(0.5, '#1e1b4b');
+    tvGrad.addColorStop(1, '#c2410c');
+    tvCtx.fillStyle = tvGrad;
+    tvCtx.fillRect(0, 0, 512, 256);
+    tvCtx.fillStyle = 'rgba(255,255,255,0.95)';
+    tvCtx.font = 'bold 28px Inter, sans-serif';
+    tvCtx.fillText('SMART HOME OS • 27.8°C', 40, 65);
+    tvCtx.font = '18px Inter, sans-serif';
+    tvCtx.fillStyle = 'rgba(125, 211, 252, 0.95)';
+    tvCtx.fillText('Digital Twin Real-Time Synchronization', 40, 102);
+    const tvTex = tuneTex(new THREE.CanvasTexture(tvCanvas), 1, 1);
+
+    // 5. Courtyard Stone Pavers
+    const stoneCanvas = document.createElement('canvas');
+    stoneCanvas.width = 512;
+    stoneCanvas.height = 512;
+    const stCtx = stoneCanvas.getContext('2d');
+    stCtx.fillStyle = '#1e293b';
+    stCtx.fillRect(0, 0, 512, 512);
+    const pGrid = 4;
+    const pSz = 512 / pGrid;
+    for (let r = 0; r < pGrid; r++) {
+      for (let c = 0; c < pGrid; c++) {
+        stCtx.fillStyle = (r + c) % 2 === 0 ? '#334155' : '#2c3a4f';
+        stCtx.fillRect(c * pSz + 3, r * pSz + 3, pSz - 6, pSz - 6);
+      }
+    }
+    const stoneTex = tuneTex(new THREE.CanvasTexture(stoneCanvas), 8, 8);
+
+    // 6. Lush Grass
+    const grassCanvas = document.createElement('canvas');
+    grassCanvas.width = 512;
+    grassCanvas.height = 512;
+    const gCtx = grassCanvas.getContext('2d');
+    gCtx.fillStyle = '#142e1b';
+    gCtx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 4000; i++) {
+      const gx = Math.random() * 512;
+      const gy = Math.random() * 512;
+      gCtx.fillStyle = Math.random() > 0.5 ? '#1a3a23' : '#102616';
+      gCtx.fillRect(gx, gy, 3, 3);
+    }
+    const grassTex = tuneTex(new THREE.CanvasTexture(grassCanvas), 14, 14);
+
+    // 7. City Skyline Windows
+    const bldgCanvas = document.createElement('canvas');
+    bldgCanvas.width = 256;
+    bldgCanvas.height = 512;
+    const bCtx = bldgCanvas.getContext('2d');
+    bCtx.fillStyle = '#0b1120';
+    bCtx.fillRect(0, 0, 256, 512);
+    for (let r = 0; r < 16; r++) {
+      for (let c = 0; c < 6; c++) {
+        const lit = (r * 7 + c * 3) % 5 === 0;
+        bCtx.fillStyle = lit ? 'rgba(253, 230, 138, 0.75)' : '#111827';
+        bCtx.fillRect(14 + c * 38, 16 + r * 30, 24, 16);
+      }
+    }
+    const bldgTex = tuneTex(new THREE.CanvasTexture(bldgCanvas), 1, 1);
+
+    return { fabricBumpTex, woodTex, tileTex, deckTex, tvTex, stoneTex, grassTex, bldgTex };
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const r = threeRefs.current;
+
+    // Create Scene, Camera, Renderer
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b132b);
+    scene.fog = new THREE.FogExp2(0x0b132b, 0.006);
+    r.scene = scene;
+
+    const camera = new THREE.PerspectiveCamera(46, container.clientWidth / container.clientHeight, 0.28, 190);
+    r.camera = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.22;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+    r.renderer = renderer;
+
+    const textures = createProceduralTextures(renderer);
+    r.proceduralTextures = textures;
+
+    // Environmental Lights
+    const ambient = new THREE.AmbientLight(0xe2e8f0, 0.75);
+    scene.add(ambient);
+
+    const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x3b2314, 0.62);
+    hemiLight.position.set(0, 35, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.95);
+    dirLight.position.set(22, 34, 24);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 2.0;
+    dirLight.shadow.camera.far = 85;
+    const d = 22;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    dirLight.shadow.bias = -0.0012;
+    dirLight.shadow.normalBias = 0.03;
+    scene.add(dirLight);
+
+    // ============================================================================
+    // SURROUNDING ENVIRONMENT (Villa Estate, Courtyard, Pool, Trees, Street)
+    // ============================================================================
+    // 1. Twilight Sky Dome
+    const skyCanvas = document.createElement('canvas');
+    skyCanvas.width = 16;
+    skyCanvas.height = 256;
+    const sCtx = skyCanvas.getContext('2d');
+    const skyGrad = sCtx.createLinearGradient(0, 0, 0, 256);
+    skyGrad.addColorStop(0, '#040814');
+    skyGrad.addColorStop(0.45, '#0f172a');
+    skyGrad.addColorStop(0.78, '#1e293b');
+    skyGrad.addColorStop(0.92, '#334155');
+    skyGrad.addColorStop(1, '#475569');
+    sCtx.fillStyle = skyGrad;
+    sCtx.fillRect(0, 0, 16, 256);
+    const skyDome = new THREE.Mesh(
+      new THREE.SphereGeometry(145, 32, 24),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(skyCanvas), side: THREE.BackSide, fog: false })
+    );
+    scene.add(skyDome);
+
+    // 2. Outer Grass Ground Plane
+    const lawnMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(170, 170),
+      new THREE.MeshStandardMaterial({ map: textures.grassTex, roughness: 0.95 })
+    );
+    lawnMesh.rotation.x = -Math.PI / 2;
+    lawnMesh.position.y = -0.58;
+    lawnMesh.receiveShadow = true;
+    scene.add(lawnMesh);
+
+    // 3. Villa Courtyard Stone Slab
+    const courtyardSlab = new THREE.Mesh(
+      new THREE.BoxGeometry(36, 0.22, 32),
+      new THREE.MeshStandardMaterial({ map: textures.stoneTex, roughness: 0.78 })
+    );
+    courtyardSlab.position.set(2.0, -0.45, 1.0);
+    courtyardSlab.receiveShadow = true;
+    scene.add(courtyardSlab);
+
+    // Garden Beds
+    const addGardenBed = (gx, gz, gw, gd) => {
+      const curb = new THREE.Mesh(
+        new THREE.BoxGeometry(gw + 0.3, 0.22, gd + 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 })
+      );
+      curb.position.set(gx, -0.26, gz);
+      curb.receiveShadow = true;
+      scene.add(curb);
+
+      const turf = new THREE.Mesh(
+        new THREE.BoxGeometry(gw, 0.26, gd),
+        new THREE.MeshStandardMaterial({ map: textures.grassTex, roughness: 0.9 })
+      );
+      turf.position.set(gx, -0.22, gz);
+      turf.receiveShadow = true;
+      scene.add(turf);
+    };
+    addGardenBed(-12.2, -2.5, 4.2, 21.0);
+    addGardenBed(1.5, -11.8, 22.0, 3.6);
+    addGardenBed(11.5, 11.2, 11.0, 4.2);
+
+    // 4. Veranda Podium & Entry Steps
+    const verandaPodium = new THREE.Mesh(
+      new THREE.BoxGeometry(20.6, 0.22, 20.6),
+      new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.65 })
+    );
+    verandaPodium.position.set(-0.2, -0.22, 0.4);
+    verandaPodium.receiveShadow = true;
+    scene.add(verandaPodium);
+
+    for (let s = 0; s < 3; s++) {
+      const stepW = 6.2 + s * 0.5;
+      const stepD = 1.2 + s * 0.45;
+      const stepY = -0.10 - s * 0.09;
+      const stepMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(stepW, 0.08, stepD),
+        new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.6 })
+      );
+      stepMesh.position.set(-2.5, stepY, 8.8 + s * 0.55);
+      stepMesh.receiveShadow = true;
+      scene.add(stepMesh);
+
+      const stepGlow = new THREE.Mesh(
+        new THREE.BoxGeometry(stepW - 0.2, 0.025, 0.04),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.8 })
+      );
+      stepGlow.position.set(-2.5, stepY + 0.02, 8.8 + s * 0.55 + stepD / 2 + 0.02);
+      scene.add(stepGlow);
+    }
+
+    // 5. Pool Deck & Infinity Pool
+    const poolDeck = new THREE.Mesh(
+      new THREE.BoxGeometry(8.2, 0.26, 17.6),
+      new THREE.MeshStandardMaterial({ map: textures.deckTex, roughness: 0.65 })
+    );
+    poolDeck.position.set(12.6, -0.21, -0.2);
+    poolDeck.receiveShadow = true;
+    scene.add(poolDeck);
+
+    const poolCoping = new THREE.Mesh(
+      new THREE.BoxGeometry(5.6, 0.08, 13.6),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 })
+    );
+    poolCoping.position.set(13.0, -0.04, -0.2);
+    scene.add(poolCoping);
+
+    const poolBasin = new THREE.Mesh(
+      new THREE.BoxGeometry(5.0, 0.06, 13.0),
+      new THREE.MeshStandardMaterial({ color: 0x0369a1, emissive: 0x0284c7, emissiveIntensity: 0.5 })
+    );
+    poolBasin.position.set(13.0, -0.05, -0.2);
+    scene.add(poolBasin);
+
+    const poolWaterMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(4.9, 12.9),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.4,
+        transparent: true,
+        opacity: 0.86,
+        roughness: 0.08,
+        metalness: 0.1
+      })
+    );
+    poolWaterMesh.rotation.x = -Math.PI / 2;
+    poolWaterMesh.position.set(13.0, 0.015, -0.2);
+    scene.add(poolWaterMesh);
+    r.poolWaterMesh = poolWaterMesh;
+
+    [-4.2, 3.8].forEach((lz) => {
+      const lounger = new THREE.Mesh(
+        new THREE.BoxGeometry(1.9, 0.18, 0.85),
+        new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.8 })
+      );
+      lounger.position.set(9.4, 0.02, lz);
+      lounger.castShadow = true;
+      scene.add(lounger);
+    });
+
+    // 6. Perimeter Fence & Gate Pillars
+    const fenceWallMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.75 });
+    const fenceSlatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.5, roughness: 0.4 });
+    const addFenceSegment = (fx, fz, fw, fd) => {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(fw, 0.55, fd), fenceWallMat);
+      base.position.set(fx, -0.06, fz);
+      base.castShadow = true;
+      scene.add(base);
+      const topRail = new THREE.Mesh(new THREE.BoxGeometry(fw, 0.9, fd * 0.5), fenceSlatMat);
+      topRail.position.set(fx, 0.68, fz);
+      scene.add(topRail);
+    };
+    addFenceSegment(2.0, -14.8, 35.6, 0.35);
+    addFenceSegment(-15.8, 1.0, 0.35, 31.6);
+    addFenceSegment(19.8, 1.0, 0.35, 31.6);
+    addFenceSegment(-10.5, 16.8, 10.6, 0.35);
+    addFenceSegment(10.5, 16.8, 18.6, 0.35);
+
+    [-5.2, 1.2].forEach((px) => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.65, 0.65), fenceWallMat);
+      pillar.position.set(px, 0.48, 16.8);
+      pillar.castShadow = true;
+      scene.add(pillar);
+      const pCap = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.12, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.2 })
+      );
+      pCap.position.set(px, 1.38, 16.8);
+      scene.add(pCap);
+    });
+
+    // 7. Street & Dashed Line
+    const roadMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(120, 0.14, 5.2),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.88 })
+    );
+    roadMesh.position.set(0, -0.50, 20.0);
+    roadMesh.receiveShadow = true;
+    scene.add(roadMesh);
+
+    for (let rx = -45; rx <= 45; rx += 6) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(2.8, 0.02, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.6 })
+      );
+      stripe.position.set(rx, -0.42, 20.0);
+      scene.add(stripe);
+    }
+
+    // 8. Trees
+    const addGardenTree = (tx, tz, scale = 1.0) => {
+      const tg = new THREE.Group();
+      tg.position.set(tx, -0.1, tz);
+      tg.scale.setScalar(scale);
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.28, 2.2, 12),
+        new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 })
+      );
+      trunk.position.y = 1.1;
+      trunk.castShadow = true;
+      tg.add(trunk);
+
+      const canopyMat = new THREE.MeshStandardMaterial({
+        color: 0x15803d,
+        bumpMap: textures.fabricBumpTex,
+        bumpScale: 0.04,
+        roughness: 0.85
+      });
+      const c1 = new THREE.Mesh(new THREE.DodecahedronGeometry(1.35, 1), canopyMat);
+      c1.position.set(0, 2.7, 0);
+      c1.castShadow = true;
+      tg.add(c1);
+
+      const c2 = new THREE.Mesh(new THREE.DodecahedronGeometry(1.05, 1), canopyMat);
+      c2.position.set(0.65, 2.3, 0.45);
+      c2.castShadow = true;
+      tg.add(c2);
+
+      const c3 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.95, 1), canopyMat);
+      c3.position.set(-0.6, 2.4, -0.4);
+      c3.castShadow = true;
+      tg.add(c3);
+
+      const ring = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.5, 0.06, 16),
+        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.0 })
+      );
+      ring.position.y = 0.04;
+      tg.add(ring);
+
+      scene.add(tg);
+    };
+
+    addGardenTree(-12.2, -9.2, 1.2);
+    addGardenTree(-12.2, 2.5, 1.1);
+    addGardenTree(-12.2, 10.2, 1.25);
+    addGardenTree(11.5, 11.2, 1.15);
+    addGardenTree(14.5, -11.5, 1.3);
+    addGardenTree(2.0, -11.8, 1.1);
+
+    // 9. Skyline
+    const numBuildings = 40;
+    for (let i = 0; i < numBuildings; i++) {
+      const angle = (i / numBuildings) * Math.PI * 2;
+      const dist = 68 + (i % 3) * 14;
+      const bw = 5.0 + (i % 4) * 1.8;
+      const bd = 5.0 + ((i + 2) % 4) * 1.6;
+      const bh = 12 + ((i * 7) % 26);
+
+      const bMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        map: textures.bldgTex,
+        emissive: 0xfde68a,
+        emissiveMap: textures.bldgTex,
+        emissiveIntensity: 0.42,
+        roughness: 0.5
+      });
+      const bMesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), bMat);
+      bMesh.position.set(Math.cos(angle) * dist, bh / 2 - 0.55, Math.sin(angle) * dist);
+      bMesh.lookAt(0, bh / 2, 0);
+      scene.add(bMesh);
+    }
+
+    // ============================================================================
+    // VILLA ARCHITECTURE & LOGICALLY CORRECT PASSAGEWAYS
+    // ============================================================================
+    const baseMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(17.2, 0.20, 17.2),
+      new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        bumpMap: textures.fabricBumpTex,
+        bumpScale: 0.02,
+        roughness: 0.75
+      })
+    );
+    baseMesh.position.y = -0.11;
+    baseMesh.receiveShadow = true;
+    scene.add(baseMesh);
+
+    const floorGeo = new THREE.BoxGeometry(7.94, 0.08, 7.94);
+
+    const woodMat = new THREE.MeshStandardMaterial({
+      map: textures.woodTex,
+      bumpMap: textures.woodTex,
+      bumpScale: 0.015,
+      roughness: 0.48,
+      metalness: 0.04
+    });
+    const bedFloor = new THREE.Mesh(floorGeo, woodMat);
+    bedFloor.position.set(-4, 0.04, -4);
+    bedFloor.receiveShadow = true;
+    scene.add(bedFloor);
+
+    const livingFloor = new THREE.Mesh(floorGeo, woodMat);
+    livingFloor.position.set(-4, 0.04, 4);
+    livingFloor.receiveShadow = true;
+    scene.add(livingFloor);
+
+    const tileMat = new THREE.MeshStandardMaterial({
+      map: textures.tileTex,
+      roughness: 0.25,
+      metalness: 0.08
+    });
+    const kitchenFloor = new THREE.Mesh(floorGeo, tileMat);
+    kitchenFloor.position.set(4, 0.04, 4);
+    kitchenFloor.receiveShadow = true;
+    scene.add(kitchenFloor);
+
+    const deckMat = new THREE.MeshStandardMaterial({
+      map: textures.deckTex,
+      bumpMap: textures.deckTex,
+      bumpScale: 0.02,
+      roughness: 0.65
+    });
+    const balconyFloor = new THREE.Mesh(floorGeo, deckMat);
+    balconyFloor.position.set(4, 0.04, -4);
+    balconyFloor.receiveShadow = true;
+    scene.add(balconyFloor);
+
+    const wallMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      bumpMap: textures.fabricBumpTex,
+      bumpScale: 0.008,
+      roughness: 0.88,
+      metalness: 0.0
+    });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.15 });
+    const woodDoorMat = new THREE.MeshStandardMaterial({
+      color: 0x6b3410,
+      bumpMap: textures.woodTex,
+      bumpScale: 0.01,
+      roughness: 0.55
+    });
+    const windowGlassMat = new THREE.MeshPhysicalMaterial({
+      color: 0xbae6fd,
+      transparent: true,
+      opacity: 0.24,
+      roughness: 0.05,
+      metalness: 0.1
+    });
+    const curtainMat = new THREE.MeshStandardMaterial({
+      color: 0xf1f5f9,
+      bumpMap: textures.fabricBumpTex,
+      bumpScale: 0.03,
+      roughness: 0.95,
+      transparent: true,
+      opacity: 0.85
+    });
+
+    const wallH = 4.0;
+
+    const addWall = (w, h, d, x, y, z, mat = wallMat, parent = scene) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+
+    // Columns & Fascia Beams
+    const pillarPositions = [[-8.05, -8.05], [8.05, -8.05], [-8.05, 8.05], [8.05, 8.05], [0, -8.05], [-8.05, 0]];
+    pillarPositions.forEach(([px, pz]) => {
+      addWall(0.42, wallH + 0.24, 0.42, px, (wallH + 0.24) / 2, pz, trimMat);
+    });
+    addWall(16.5, 0.22, 0.36, 0, wallH + 0.15, -8.05, trimMat);
+    addWall(16.5, 0.22, 0.36, 0, wallH + 0.15, 8.05, trimMat);
+    addWall(0.36, 0.22, 16.1, -8.05, wallH + 0.15, 0, trimMat);
+    addWall(0.36, 0.22, 16.1, 8.05, wallH + 0.15, 0, trimMat);
+
+    // Balcony Pergola Slats
+    for (let i = 0; i < 9; i++) {
+      addWall(7.6, 0.12, 0.16, 4.1, wallH + 0.12, -7.4 + i * 0.85, woodDoorMat);
+    }
+
+    const addPanoramicWindow = (x, y, z, w, h, rotY, parent = scene) => {
+      const wg = new THREE.Group();
+      wg.position.set(x, y, z);
+      wg.rotation.y = rotY;
+      addWall(w, 0.1, 0.30, 0, h / 2, 0, trimMat, wg);
+      addWall(w, 0.1, 0.30, 0, -h / 2, 0, trimMat, wg);
+      addWall(0.1, h - 0.2, 0.30, -w / 2 + 0.05, 0, 0, trimMat, wg);
+      addWall(0.1, h - 0.2, 0.30, w / 2 - 0.05, 0, 0, trimMat, wg);
+      addWall(0.06, h - 0.2, 0.28, 0, 0, 0, trimMat, wg);
+      addWall(w - 0.22, h - 0.22, 0.05, 0, 0, 0, windowGlassMat, wg);
+      addWall(0.48, h - 0.22, 0.14, -w / 2 + 0.36, 0, 0.22, curtainMat, wg);
+      addWall(0.48, h - 0.22, 0.14, w / 2 - 0.36, 0, 0.22, curtainMat, wg);
+      parent.add(wg);
+    };
+
+    const addOpenDoorway = (x, z, rotY) => {
+      const doorGroup = new THREE.Group();
+      doorGroup.position.set(x, 0, z);
+      doorGroup.rotation.y = rotY;
+      addWall(0.12, 2.75, 0.3, -0.98, 1.375, 0, woodDoorMat, doorGroup);
+      addWall(0.12, 2.75, 0.3, 0.98, 1.375, 0, woodDoorMat, doorGroup);
+      addWall(2.1, 0.14, 0.32, 0, 2.78, 0, woodDoorMat, doorGroup);
+
+      const leafPivot = new THREE.Group();
+      leafPivot.position.set(-0.9, 1.38, 0.1);
+      leafPivot.rotation.y = 1.22;
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.48, 2.58, 0.07), woodDoorMat);
+      leaf.position.set(0.74, 0, 0);
+      leaf.castShadow = true;
+      leafPivot.add(leaf);
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.04, 0.16),
+        new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.2 })
+      );
+      handle.position.set(1.32, 0, 0);
+      leafPivot.add(handle);
+      doorGroup.add(leafPivot);
+      scene.add(doorGroup);
+    };
+
+    // Back Outer Wall (North)
+    addWall(5.4, wallH, 0.24, -5.1, wallH / 2, -8);
+    addWall(0.5, wallH, 0.24, -0.35, wallH / 2, -8);
+    addWall(1.8, 0.85, 0.24, -1.5, 0.425, -8);
+    addWall(1.8, 0.75, 0.24, -1.5, wallH - 0.375, -8);
+    addPanoramicWindow(-1.5, 2.05, -8, 1.8, 2.4, 0);
+
+    // Left Outer Wall (West)
+    addWall(0.24, wallH, 2.2, -8, wallH / 2, -6.7);
+    addWall(0.24, wallH, 10.4, -8, wallH / 2, 2.6);
+    addWall(0.24, 0.85, 3.0, -8, 0.425, -4.1);
+    addWall(0.24, 0.75, 3.0, -8, wallH - 0.375, -4.1);
+    addPanoramicWindow(-8, 2.05, -4.1, 3.0, 2.4, Math.PI / 2);
+
+    // Balcony Glass Railing
+    addWall(7.5, 1.18, 0.06, 4.0, 0.68, -8, windowGlassMat);
+    addWall(0.06, 1.18, 7.5, 8, 0.68, -4.0, windowGlassMat);
+    addWall(7.6, 0.08, 0.16, 4.0, 1.30, -8, trimMat);
+    addWall(0.16, 0.08, 7.6, 8, 1.30, -4.0, trimMat);
+    [2.5, 5.2].forEach((px) => addWall(0.1, 1.25, 0.1, px, 0.68, -8, trimMat));
+    [-5.2, -2.5].forEach((pz) => addWall(0.1, 1.25, 0.1, 8, 0.68, pz, trimMat));
+
+    // =========================================================================
+    // CROSS WALLS & LOGICAL OPEN PASSAGEWAYS
+    // =========================================================================
+    // 1. Divider between Bedroom & Living (Z = 0, X < 0)
+    addWall(4.7, wallH, 0.22, -5.5, wallH / 2, 0);
+    addWall(0.95, wallH, 0.22, -0.6, wallH / 2, 0);
+    addWall(2.05, 1.2, 0.22, -2.1, wallH - 0.6, 0);
+    addWall(15.6, 0.12, 0.24, 0, wallH + 0.06, 0, trimMat);
+    addOpenDoorway(-2.1, 0, 0);
+
+    // 2. Divider between Balcony & Kitchen (Z = 0, X > 0)
+    // FIX: Doorway moved cleanly to X = 1.6, Z = 0 so it connects to the natural walkway corridor!
+    // Solid wall on right (X = 2.6..8.0) accommodates the luxury L-counter and cooktop without blocking!
+    addWall(0.65, wallH, 0.22, 0.35, wallH / 2, 0); // X = 0.025 to 0.675
+    addWall(5.4, wallH, 0.22, 5.3, wallH / 2, 0);   // X = 2.6 to 8.0 (Solid backing for kitchen counter)
+    addWall(2.0, 1.2, 0.22, 1.6, wallH - 0.6, 0);   // Lintel
+    addOpenDoorway(1.6, 0, 0);                       // Completely clear doorway at X = 1.6!
+
+    // 3. Divider between Bedroom & Balcony (X = 0, Z < 0)
+    addWall(0.22, wallH, 2.8, 0, wallH / 2, -6.45);
+    addWall(0.22, wallH, 2.8, 0, wallH / 2, -1.55);
+    addWall(0.22, 1.2, 2.1, 0, wallH - 0.6, -4.0);
+    addWall(0.24, 0.12, 15.6, 0, wallH + 0.08, 0, trimMat);
+    addOpenDoorway(0, -4.0, Math.PI / 2);
+
+    // 4. Divider between Living & Kitchen (X = 0, Z > 0)
+    addWall(0.22, wallH, 2.45, 0, wallH / 2, 1.35);
+    addWall(0.22, wallH, 2.45, 0, wallH / 2, 6.65);
+    addWall(0.22, 1.0, 2.8, 0, wallH - 0.5, 4.0);
+    addWall(0.3, 3.0, 0.12, 0, 1.5, 2.6, woodDoorMat);
+    addWall(0.3, 3.0, 0.12, 0, 1.5, 5.4, woodDoorMat);
+    addWall(0.32, 0.14, 2.9, 0, 3.0, 4.0, woodDoorMat);
+
+    // Front & Right Cutaway Walls (First-Person view)
+    const frontCutawayWallsGroup = new THREE.Group();
+    addWall(1.6, wallH, 0.24, -7.0, wallH / 2, 8, wallMat, frontCutawayWallsGroup);
+    addWall(1.6, wallH, 0.24, -1.0, wallH / 2, 8, wallMat, frontCutawayWallsGroup);
+    addWall(4.4, 0.75, 0.24, -4.0, 0.375, 8, wallMat, frontCutawayWallsGroup);
+    addWall(4.4, 0.75, 0.24, -4.0, wallH - 0.375, 8, wallMat, frontCutawayWallsGroup);
+    addPanoramicWindow(-4.0, 2.0, 8, 4.4, 2.5, Math.PI, frontCutawayWallsGroup);
+    addWall(7.6, wallH, 0.24, 4.0, wallH / 2, 8, wallMat, frontCutawayWallsGroup);
+    addWall(0.24, wallH, 1.6, 8, wallH / 2, 1.0, wallMat, frontCutawayWallsGroup);
+    addWall(0.24, wallH, 1.6, 8, wallH / 2, 7.0, wallMat, frontCutawayWallsGroup);
+    addWall(0.24, 0.75, 4.4, 8, 0.375, 4.0, wallMat, frontCutawayWallsGroup);
+    addWall(0.24, 0.75, 4.4, 8, wallH - 0.375, 4.0, wallMat, frontCutawayWallsGroup);
+    addPanoramicWindow(8, 2.0, 4.0, 4.4, 2.5, -Math.PI / 2, frontCutawayWallsGroup);
+    frontCutawayWallsGroup.visible = false;
+    scene.add(frontCutawayWallsGroup);
+    r.frontCutawayWallsGroup = frontCutawayWallsGroup;
+
+    // Overview low cutaway curbs
+    addWall(15.6, 0.20, 0.22, 0, 0.18, 8, trimMat);
+    addWall(0.22, 0.20, 7.6, 8, 0.18, 4, trimMat);
+
+    // Coffered Tray Ceiling Group
+    const ceilingGroup = new THREE.Group();
+    const ceilingMat = new THREE.MeshStandardMaterial({
+      color: 0xf8fafc,
+      bumpMap: textures.fabricBumpTex,
+      bumpScale: 0.006,
+      roughness: 0.9,
+      side: THREE.DoubleSide
+    });
+    const coveGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 1.5
+    });
+    [[-4, -4], [-4, 4], [4, 4]].forEach(([rx, rz]) => {
+      const cSlab = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.10, 7.8), ceilingMat);
+      cSlab.position.set(rx, wallH + 0.12, rz);
+      ceilingGroup.add(cSlab);
+      const coveRing = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.04, 6.6), coveGlowMat);
+      coveRing.position.set(rx, wallH + 0.03, rz);
+      ceilingGroup.add(coveRing);
+      const innerPanel = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.04, 6.2), ceilingMat);
+      innerPanel.position.set(rx, wallH - 0.03, rz);
+      ceilingGroup.add(innerPanel);
+    });
+    ceilingGroup.visible = false;
+    scene.add(ceilingGroup);
+    r.ceilingGroup = ceilingGroup;
+
+    // ============================================================================
+    // LOGICALLY ARRANGED INTERIOR FURNITURE (NO BLOCKAGES, PROPER CLEARANCE)
+    // ============================================================================
+    const box = (w, h, d, color, x, y, z, roughness = 0.65, metalness = 0.05) => {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({ color, roughness, metalness })
+      );
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+      return m;
+    };
+
+    const fabricBox = (w, h, d, color, x, y, z, useOffset = false) => {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({
+          color,
+          bumpMap: textures.fabricBumpTex,
+          bumpScale: 0.025,
+          roughness: 0.92,
+          metalness: 0.0,
+          polygonOffset: useOffset,
+          polygonOffsetFactor: useOffset ? -1 : 0,
+          polygonOffsetUnits: useOffset ? -1 : 0
+        })
+      );
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      scene.add(m);
+      return m;
+    };
+
+    const glowStrip = (w, h, d, color, x, y, z, intensity = 1.4) => {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity })
+      );
+      m.position.set(x, y, z);
+      scene.add(m);
+      return m;
+    };
+
+    // --- 1. PHÒNG NGỦ (Top-Left: -4, -4) ---
+    // Acoustic headboard wall slats
+    for (let s = 0; s < 14; s++) {
+      box(0.14, 3.6, 0.08, 0x92400e, -7.2 + s * 0.28, 1.88, -7.80, 0.55);
+    }
+    glowStrip(3.8, 0.06, 0.1, 0xfbbf24, -5.4, 3.72, -7.78, 1.8);
+    fabricBox(4.2, 0.03, 4.4, 0x334155, -5.4, 0.10, -4.9, true);
+
+    // Bed Layers (Proper non-overlapping Y clearance)
+    fabricBox(3.5, 0.26, 4.1, 0x1e293b, -5.4, 0.26, -5.2);
+    glowStrip(3.4, 0.04, 4.0, 0xf59e0b, -5.4, 0.11, -5.2, 1.4);
+    fabricBox(3.6, 1.55, 0.24, 0x334155, -5.4, 0.88, -7.2);
+    fabricBox(3.2, 0.26, 3.7, 0xf8fafc, -5.4, 0.52, -5.15);
+    fabricBox(3.24, 0.08, 2.35, 0x1d4ed8, -5.4, 0.69, -4.45);
+    fabricBox(3.25, 0.05, 0.50, 0x93c5fd, -5.4, 0.755, -5.45);
+    fabricBox(1.15, 0.18, 0.58, 0xffffff, -6.15, 0.75, -6.5);
+    fabricBox(1.15, 0.18, 0.58, 0xffffff, -4.65, 0.75, -6.5);
+    fabricBox(0.95, 0.16, 0.42, 0xfde68a, -6.15, 0.76, -5.95);
+    fabricBox(0.95, 0.16, 0.42, 0xfde68a, -4.65, 0.76, -5.95);
+
+    // Nightstand
+    box(0.85, 0.55, 0.75, 0x451a03, -3.15, 0.36, -7.25, 0.5);
+    const lampStand = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.12, 0.35, 16),
+      new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.7, roughness: 0.2 })
+    );
+    lampStand.position.set(-3.15, 0.81, -7.25);
+    scene.add(lampStand);
+    const lampShade = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.26, 0.32, 20),
+      new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xf59e0b, emissiveIntensity: 1.6 })
+    );
+    lampShade.position.set(-3.15, 1.05, -7.25);
+    scene.add(lampShade);
+
+    // Wardrobe positioned cleanly away from window (Z = -1.35, stops before window at Z = -2.6)
+    box(1.05, 2.85, 2.2, 0x1e293b, -7.32, 1.52, -1.35, 0.45);
+    box(0.04, 2.65, 1.02, 0xcbd5e1, -6.76, 1.52, -1.9, 0.25, 0.5);
+    box(0.04, 2.65, 1.02, 0xcbd5e1, -6.76, 1.52, -0.8, 0.25, 0.5);
+
+    // Framed Art
+    box(0.04, 1.3, 1.9, 0x1e293b, -0.15, 2.25, -6.1);
+    box(0.04, 1.15, 1.75, 0xf59e0b, -0.19, 2.25, -6.1, 0.35);
+
+    // --- 2. PHÒNG KHÁCH (Bottom-Left: -4, 4) ---
+    // Orient sofa to logically face the 75-inch TV wall (facing West)
+    fabricBox(4.6, 0.03, 4.6, 0x44403c, -4.5, 0.10, 4.0, true);
+
+    // Acoustic slats on TV wall (West wall)
+    for (let s = 0; s < 16; s++) {
+      box(0.08, 3.6, 0.14, 0x78350f, -7.80, 1.88, 1.8 + s * 0.28, 0.55);
+    }
+    // TV console & 75" Smart TV
+    box(0.75, 0.46, 4.2, 0x1e293b, -7.38, 0.37, 4.0, 0.4);
+    glowStrip(0.72, 0.04, 4.1, 0x38bdf8, -7.38, 0.11, 4.0, 1.4);
+    box(0.08, 1.85, 3.3, 0x090d16, -7.68, 1.85, 4.0, 0.15, 0.6);
+    const tvScreen = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 1.74, 3.16),
+      new THREE.MeshStandardMaterial({
+        map: textures.tvTex,
+        emissive: 0x38bdf8,
+        emissiveMap: textures.tvTex,
+        emissiveIntensity: 0.75,
+        roughness: 0.15
+      })
+    );
+    tvScreen.position.set(-7.61, 1.85, 4.0);
+    scene.add(tvScreen);
+
+    // L-Sofa facing West toward TV wall
+    // Main back along X = -2.6 (Z = 2.4 to 5.6)
+    fabricBox(1.15, 0.28, 3.8, 0x1e293b, -3.1, 0.26, 4.0);  // Sofa base
+    fabricBox(0.24, 0.72, 3.8, 0x1e293b, -2.45, 0.76, 4.0); // Sofa backrest facing West
+    fabricBox(1.05, 0.16, 1.15, 0x334155, -3.1, 0.48, 2.7); // Cushion 1
+    fabricBox(1.05, 0.16, 1.15, 0x334155, -3.1, 0.48, 4.0); // Cushion 2
+    fabricBox(1.05, 0.16, 1.15, 0x334155, -3.1, 0.48, 5.3); // Cushion 3
+    // Chaise return along Z = 2.7 extending West
+    fabricBox(1.5, 0.28, 1.15, 0x1e293b, -4.2, 0.26, 2.7);
+    fabricBox(1.5, 0.16, 1.05, 0x334155, -4.2, 0.48, 2.7);
+    // Accent pillows
+    fabricBox(0.20, 0.42, 0.55, 0xd97706, -2.7, 0.77, 2.7);
+    fabricBox(0.20, 0.42, 0.55, 0x0284c7, -2.7, 0.77, 4.0);
+    fabricBox(0.20, 0.42, 0.55, 0x059669, -2.7, 0.77, 5.3);
+
+    // Coffee table centered between Sofa and TV
+    box(1.2, 0.08, 2.0, 0x78350f, -4.9, 0.44, 4.2, 0.3, 0.1);
+    box(1.0, 0.32, 1.8, 0x1e293b, -4.9, 0.24, 4.2, 0.6);
+    const orbLamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.5 })
+    );
+    orbLamp.position.set(-4.9, 0.62, 4.2);
+    scene.add(orbLamp);
+
+    // --- 3. PHÒNG BẾP & PHÒNG ĂN (Bottom-Right: 4, 4) ---
+    // ARCHITECTURAL FIX:
+    // Doorway to balcony is at X = 1.6, Z = 0 (completely clear corridor!).
+    // L-counter is placed along the solid North wall (X = 3.0 to 7.5, Z = 0.5)
+    // and East wall (X = 7.4, Z = 0.5 to 3.5).
+    // Zero collision with any door! 1.4m clearance from walkway!
+
+    // North counter section (Cooktop & Range Hood)
+    box(4.4, 0.84, 0.85, 0xf8fafc, 5.2, 0.50, 0.55, 0.3); // Base
+    box(4.5, 0.08, 0.92, 0x1e293b, 5.2, 0.96, 0.55, 0.2, 0.3); // Quartz countertop
+    // Upper wall cabinets with under-cabinet warm LED
+    box(3.8, 0.95, 0.55, 0xe2e8f0, 4.9, 2.75, 0.40, 0.35);
+    glowStrip(3.7, 0.04, 0.12, 0xfef08a, 4.9, 2.25, 0.50, 2.2);
+
+    // Induction cooktop at X = 4.8, Z = 0.55
+    box(1.2, 0.04, 0.75, 0x090d16, 4.8, 1.02, 0.55, 0.15, 0.5);
+    const burnerGlow1 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.20, 0.20, 0.03, 24),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xdc2626, emissiveIntensity: 2.0 })
+    );
+    burnerGlow1.position.set(4.5, 1.055, 0.55);
+    scene.add(burnerGlow1);
+    const burnerGlow2 = burnerGlow1.clone();
+    burnerGlow2.position.set(5.1, 1.055, 0.55);
+    scene.add(burnerGlow2);
+
+    // Range hood with 6-blade spinning exhaust turbine fan directly over cooktop
+    const hoodGroup = new THREE.Group();
+    hoodGroup.position.set(4.8, 2.65, 0.55);
+    const hoodBody = new THREE.Mesh(
+      new THREE.BoxGeometry(1.45, 0.3, 0.95),
+      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.25 })
+    );
+    hoodGroup.add(hoodBody);
+    const chimney = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 1.2, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.25 })
+    );
+    chimney.position.y = 0.75;
+    hoodGroup.add(chimney);
+
+    const fanBladesMesh = new THREE.Group();
+    fanBladesMesh.position.set(0, -0.18, 0);
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.14, 0.08, 16),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.9 })
+    );
+    fanBladesMesh.add(hub);
+    for (let i = 0; i < 6; i++) {
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.44, 0.025, 0.13),
+        new THREE.MeshStandardMaterial({ color: 0x7dd3fc, emissive: 0x0284c7, emissiveIntensity: 0.5 })
+      );
+      blade.rotation.y = (i * Math.PI) / 3;
+      blade.position.y = (i % 2) * 0.006;
+      fanBladesMesh.add(blade);
+    }
+    hoodGroup.add(fanBladesMesh);
+    scene.add(hoodGroup);
+    r.fanBladesMesh = fanBladesMesh;
+
+    // East counter section (Sink & Refrigerator)
+    box(0.85, 0.84, 2.2, 0xf8fafc, 7.35, 0.50, 2.1, 0.3);
+    box(0.92, 0.08, 2.3, 0x1e293b, 7.35, 0.96, 2.1, 0.2, 0.3);
+    // Undermount stainless sink
+    box(0.65, 0.04, 0.95, 0x64748b, 7.35, 1.02, 1.9, 0.2, 0.85);
+
+    // French Refrigerator at X = 7.35, Z = 3.4
+    box(0.95, 2.35, 1.05, 0x334155, 7.35, 1.26, 3.4, 0.25, 0.75);
+    box(0.04, 0.9, 0.04, 0x94a3b8, 6.82, 1.5, 3.15, 0.2, 0.9);
+    box(0.04, 0.9, 0.04, 0x94a3b8, 6.82, 1.5, 3.65, 0.2, 0.9);
+
+    // Dining area (Spacious, open, beautiful)
+    box(2.2, 0.08, 1.3, 0x92400e, 4.0, 0.84, 5.2, 0.4);
+    [[-0.9, -0.5], [0.9, -0.5], [-0.9, 0.5], [0.9, 0.5]].forEach(([dx, dz]) => {
+      box(0.09, 0.72, 0.09, 0x1e293b, 4.0 + dx, 0.44, 5.2 + dz, 0.5);
+    });
+    // 4 Dining Chairs
+    [[3.3, 4.3, 0], [4.7, 4.3, 0], [3.3, 6.1, Math.PI], [4.7, 6.1, Math.PI]].forEach(([cx, cz, crot]) => {
+      fabricBox(0.48, 0.08, 0.48, 0x334155, cx, 0.50, cz);
+      box(0.40, 0.38, 0.40, 0x1e293b, cx, 0.27, cz, 0.6);
+      const backZ = crot === 0 ? cz - 0.20 : cz + 0.20;
+      fabricBox(0.48, 0.44, 0.08, 0x334155, cx, 0.76, backZ);
+    });
+
+    // --- 4. BAN CÔNG (Top-Right: 4, -4) ---
+    // Comfortable outdoor setup
+    fabricBox(1.4, 0.32, 1.4, 0x334155, 4.5, 0.26, -4.5);
+    fabricBox(1.4, 0.65, 0.24, 0x1e293b, 4.5, 0.62, -5.25);
+    fabricBox(0.75, 0.36, 0.2, 0x38bdf8, 4.5, 0.62, -4.98);
+    const bTable = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.65, 0.65, 0.06, 24),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4 })
+    );
+    bTable.position.set(6.2, 0.58, -4.5);
+    scene.add(bTable);
+    const bLeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.22, 0.48, 16),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b })
+    );
+    bLeg.position.set(6.2, 0.32, -4.5);
+    scene.add(bLeg);
+
+    const addPlant = (x, z, scale = 1.0) => {
+      const pg = new THREE.Group();
+      pg.position.set(x, 0, z);
+      pg.scale.setScalar(scale);
+      const pot = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.42, 0.3, 0.62, 20),
+        new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.35 })
+      );
+      pot.position.y = 0.35;
+      pot.castShadow = true;
+      pg.add(pot);
+      const soil = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.38, 0.38, 0.05, 16),
+        new THREE.MeshStandardMaterial({ color: 0x292524 })
+      );
+      soil.position.y = 0.65;
+      pg.add(soil);
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: 0x16a34a,
+        bumpMap: textures.fabricBumpTex,
+        bumpScale: 0.03,
+        roughness: 0.65
+      });
+      for (let l = 0; l < 6; l++) {
+        const angle = (l * Math.PI) / 3;
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 12), leafMat);
+        leaf.scale.set(1.25, 0.35, 0.7);
+        leaf.position.set(Math.cos(angle) * 0.32, 0.92 + (l % 2) * 0.18, Math.sin(angle) * 0.32);
+        leaf.rotation.y = -angle;
+        leaf.rotation.z = 0.4;
+        leaf.castShadow = true;
+        pg.add(leaf);
+      }
+      const topLeaf = new THREE.Mesh(new THREE.SphereGeometry(0.35, 14, 14), leafMat);
+      topLeaf.position.set(0, 1.22, 0);
+      pg.add(topLeaf);
+      scene.add(pg);
+    };
+    addPlant(1.6, -6.7, 1.15);
+    addPlant(6.7, -6.7, 1.2);
+    addPlant(6.7, -1.6, 1.0);
+    addPlant(-6.7, 6.7, 1.15);
+
+    // ============================================================================
+    // LIGHTING FIXTURES & SWITCHES
+    // ============================================================================
+    Object.keys(ROOM_CONFIG).forEach((key) => {
+      const cfg = ROOM_CONFIG[key];
+      const fixture = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.45, 0.55, 0.14, 24),
+        new THREE.MeshStandardMaterial({
+          color: 0x475569,
+          emissive: 0x000000,
+          emissiveIntensity: 0
+        })
+      );
+      fixture.position.copy(cfg.lightPos);
+      scene.add(fixture);
+      r.roomBulbMeshes[key] = fixture;
+
+      const pLight = new THREE.PointLight(0xffedd5, 0, 14, 1.5);
+      pLight.position.set(cfg.lightPos.x, cfg.lightPos.y - 0.25, cfg.lightPos.z);
+      pLight.castShadow = false;
+      scene.add(pLight);
+      r.roomPointLights[key] = pLight;
+
+      const swPlate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.28, 0.28),
+        new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.3 })
+      );
+      swPlate.position.copy(cfg.switchPos);
+      scene.add(swPlate);
+
+      const swLed = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 12, 12),
+        new THREE.MeshStandardMaterial({
+          color: 0x64748b,
+          emissive: 0x000000,
+          emissiveIntensity: 0
+        })
+      );
+      swLed.position.copy(cfg.switchPos);
+      swLed.position.y += 0.05;
+      scene.add(swLed);
+      r.wallSwitchLeds[key] = swLed;
+    });
+
+    const buzzerBeaconMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.28, 0.16, 20),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xdc2626, emissiveIntensity: 0.2 })
+    );
+    buzzerBeaconMesh.position.set(0.3, 3.1, 0.3);
+    scene.add(buzzerBeaconMesh);
+    r.buzzerBeaconMesh = buzzerBeaconMesh;
+
+    const buzzerPointLight = new THREE.PointLight(0xef4444, 0, 14);
+    buzzerPointLight.position.set(0.5, 2.9, 0.5);
+    scene.add(buzzerPointLight);
+    r.buzzerPointLight = buzzerPointLight;
+
+    // ============================================================================
+    // 3D PROJECTED HOTSPOTS
+    // ============================================================================
+    const layer = hotspotsLayerRef.current;
+    if (layer) {
+      layer.innerHTML = '';
+      r.hotspotItems = [];
+
+      Object.keys(ROOM_CONFIG).forEach((key) => {
+        const cfg = ROOM_CONFIG[key];
+
+        // Overview Room Entry & Status Badge
+        const badgeEl = document.createElement('div');
+        badgeEl.className = 'hotspot-3d';
+        badgeEl.innerHTML = `
+          <div class="glass-panel px-3 py-1.5 rounded-2xl flex flex-col items-center gap-1 border border-slate-600/60 shadow-xl cursor-default">
+            <div class="flex items-center gap-2">
+              <span id="hs-dot-${key}" class="w-2 h-2 rounded-full bg-slate-500"></span>
+              <span class="text-[11px] font-bold tracking-wider text-white">${cfg.name}</span>
+              <button id="hs-state-${key}" class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:opacity-80 transition cursor-pointer pointer-events-auto">
+                OFF
+              </button>
+            </div>
+            <button id="hs-enter-${key}" class="w-full py-1 px-2.5 rounded-lg bg-sky-500/90 hover:bg-sky-400 text-white font-semibold text-[10px] flex items-center justify-center gap-1 transition shadow cursor-pointer pointer-events-auto">
+              <span>🚶 Bước vào phòng (360°)</span>
+            </button>
+          </div>
+        `;
+        layer.appendChild(badgeEl);
+
+        const enterBtn = badgeEl.querySelector(`#hs-enter-${key}`);
+        if (enterBtn) {
+          enterBtn.onclick = (e) => {
+            e.stopPropagation();
+            callbacksRef.current.setViewMode(key);
+          };
+        }
+        const stateBtn = badgeEl.querySelector(`#hs-state-${key}`);
+        if (stateBtn) {
+          stateBtn.onclick = (e) => {
+            e.stopPropagation();
+            const reported = callbacksRef.current.twinData?.reported || {};
+            const isCurrentlyOn = reported[cfg.lightKey] === 1;
+            callbacksRef.current.onToggle(cfg.toggleMethod, !isCurrentlyOn);
+          };
+        }
+
+        r.hotspotItems.push({ type: 'overview-badge', room: key, pos: cfg.badgePos, el: badgeEl });
+
+        // Wall Switch Button
+        const swEl = document.createElement('div');
+        swEl.className = 'hotspot-3d';
+        swEl.innerHTML = `
+          <button id="wall-sw-${key}" class="glass-panel px-3 py-1.5 rounded-xl border border-amber-400/60 hover:scale-105 transition flex items-center gap-2 shadow-lg cursor-pointer pointer-events-auto">
+            <span class="text-sm">🔘</span>
+            <div class="text-left">
+              <div class="text-[10px] font-bold text-white">Công tắc tường ${cfg.name}</div>
+              <div id="wall-sw-sub-${key}" class="text-[9px] text-amber-300">Nhấn để Bật/Tắt đèn</div>
+            </div>
+          </button>
+        `;
+        layer.appendChild(swEl);
+
+        const wallBtn = swEl.querySelector(`#wall-sw-${key}`);
+        if (wallBtn) {
+          wallBtn.onclick = (e) => {
+            e.stopPropagation();
+            const reported = callbacksRef.current.twinData?.reported || {};
+            const isCurrentlyOn = reported[cfg.lightKey] === 1;
+            callbacksRef.current.onToggle(cfg.toggleMethod, !isCurrentlyOn);
+          };
+        }
+
+        r.hotspotItems.push({ type: 'room-switch', room: key, pos: cfg.switchPos, el: swEl });
+
+        // Doorway Walking Portals
+        cfg.portals.forEach((p) => {
+          const portalEl = document.createElement('div');
+          portalEl.className = 'hotspot-3d';
+          portalEl.innerHTML = `
+            <button class="px-3.5 py-2 rounded-full bg-sky-500/90 hover:bg-sky-400 text-white font-bold text-xs shadow-[0_0_20px_rgba(14,165,233,0.6)] border border-sky-200 flex items-center gap-1.5 transition cursor-pointer pointer-events-auto">
+              <span>👣</span> <span>${p.label}</span>
+            </button>
+          `;
+          layer.appendChild(portalEl);
+
+          const portalBtn = portalEl.querySelector('button');
+          if (portalBtn) {
+            portalBtn.onclick = (e) => {
+              e.stopPropagation();
+              callbacksRef.current.setViewMode(p.target);
+            };
+          }
+
+          r.hotspotItems.push({ type: 'room-portal', room: key, pos: p.pos, el: portalEl });
+        });
+      });
+
+      // Kitchen Fan PWM Speed Control Hotspot
+      const fanHotspotEl = document.createElement('div');
+      fanHotspotEl.className = 'hotspot-3d';
+      fanHotspotEl.innerHTML = `
+        <div class="glass-panel px-3 py-2 rounded-xl border border-sky-400/50 flex flex-col gap-1 shadow-xl">
+          <div class="text-[10px] font-bold text-sky-300 flex items-center gap-1">🌀 Quạt hút bếp (PWM)</div>
+          <div class="flex gap-1">
+            <button data-spd="0" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-white cursor-pointer pointer-events-auto">Tắt</button>
+            <button data-spd="1" class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-[10px] text-white cursor-pointer pointer-events-auto">1</button>
+            <button data-spd="2" class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-[10px] text-white cursor-pointer pointer-events-auto">2</button>
+            <button data-spd="3" class="px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-500 text-[10px] text-white cursor-pointer pointer-events-auto">Max</button>
+          </div>
+        </div>
+      `;
+      layer.appendChild(fanHotspotEl);
+
+      fanHotspotEl.querySelectorAll('button').forEach((b) => {
+        b.onclick = (e) => {
+          e.stopPropagation();
+          const spd = parseInt(b.getAttribute('data-spd'), 10);
+          callbacksRef.current.onToggle('setFan', spd);
+        };
+      });
+
+      r.hotspotItems.push({
+        type: 'room-switch',
+        room: 'kitchen',
+        pos: new THREE.Vector3(4.8, 2.0, 1.0),
+        el: fanHotspotEl
+      });
+    }
+
+    // ============================================================================
+    // POINTER & KEYBOARD WALKTHROUGH CONTROLS
+    // ============================================================================
+    const dom = renderer.domElement;
+
+    const onPointerDown = (e) => {
+      r.isPointerDown = true;
+      r.prevPointer.x = e.clientX;
+      r.prevPointer.y = e.clientY;
+    };
+
+    const onPointerUp = () => {
+      r.isPointerDown = false;
+    };
+
+    const onPointerMove = (e) => {
+      if (!r.isPointerDown) return;
+      const dx = e.clientX - r.prevPointer.x;
+      const dy = e.clientY - r.prevPointer.y;
+      r.prevPointer.x = e.clientX;
+      r.prevPointer.y = e.clientY;
+
+      if (r.currentMode === 'overview' || r.currentMode === 'top') {
+        r.targetSpherical.theta -= dx * 0.007;
+        r.targetSpherical.phi = Math.max(0.1, Math.min(Math.PI / 2.2, r.targetSpherical.phi - dy * 0.006));
+      } else {
+        r.targetFpYaw -= dx * 0.0055;
+        r.targetFpPitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3.2, r.targetFpPitch - dy * 0.005));
+      }
+    };
+
+    const onWheel = (e) => {
+      if (r.currentMode === 'overview' || r.currentMode === 'top') {
+        r.targetSpherical.radius = Math.max(11, Math.min(42, r.targetSpherical.radius + e.deltaY * 0.015));
+      } else {
+        r.targetCameraFov = Math.max(55, Math.min(88, r.targetCameraFov + e.deltaY * 0.02));
+      }
+    };
+
+    const onKeyDown = (e) => {
+      r.keysPressed[e.code] = true;
+    };
+
+    const onKeyUp = (e) => {
+      r.keysPressed[e.code] = false;
+    };
+
+    dom.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointermove', onPointerMove);
+    dom.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    const onWindowResize = () => {
+      if (!container || !r.camera || !r.renderer) return;
+      r.camera.aspect = container.clientWidth / container.clientHeight;
+      r.camera.updateProjectionMatrix();
+      r.renderer.setSize(container.clientWidth, container.clientHeight);
+    };
+    window.addEventListener('resize', onWindowResize);
+
+    // ============================================================================
+    // MAIN RENDER LOOP
+    // ============================================================================
+    const animate = () => {
+      r.animFrameId = requestAnimationFrame(animate);
+
+      // Camera FOV transition
+      if (Math.abs(r.camera.fov - r.targetCameraFov) > 0.05) {
+        r.camera.fov += (r.targetCameraFov - r.camera.fov) * 0.1;
+        r.camera.updateProjectionMatrix();
+      }
+
+      // Shimmering Pool Water
+      if (r.poolWaterMesh) {
+        r.poolWaterMesh.position.y = 0.02 + Math.sin(Date.now() * 0.002) * 0.004;
+      }
+
+      // Rotating Kitchen Exhaust Fan
+      const curFanSpeed = callbacksRef.current.twinData?.reported?.fan_speed || (callbacksRef.current.twinData?.reported?.fan_kitchen ? 3 : 0);
+      if (r.fanBladesMesh && curFanSpeed > 0) {
+        const speeds = [0, 0.08, 0.22, 0.45];
+        r.fanBladesMesh.rotation.y += speeds[curFanSpeed] || 0.1;
+      }
+
+      // Buzzer Alarm Beacon Pulse
+      const isAlarm =
+        callbacksRef.current.twinData?.reported?.fire_alarm === 1 ||
+        callbacksRef.current.twinData?.mismatch?.detected;
+      if (r.buzzerPointLight && r.buzzerBeaconMesh) {
+        if (isAlarm) {
+          const pulse = (Math.sin(Date.now() * 0.012) + 1) * 1.4;
+          r.buzzerPointLight.intensity = pulse;
+          r.buzzerBeaconMesh.material.emissiveIntensity = pulse;
+        } else {
+          r.buzzerPointLight.intensity = 0;
+          r.buzzerBeaconMesh.material.emissiveIntensity = 0.15;
+        }
+      }
+
+      // Auto-rotation in overview mode if enabled
+      if (callbacksRef.current.autoRotate && (r.currentMode === 'overview' || r.currentMode === 'top')) {
+        r.targetSpherical.theta += 0.0025;
+      }
+
+      // Camera movement
+      if (r.currentMode === 'overview' || r.currentMode === 'top') {
+        r.orbitSpherical.radius += (r.targetSpherical.radius - r.orbitSpherical.radius) * 0.08;
+        r.orbitSpherical.phi += (r.targetSpherical.phi - r.orbitSpherical.phi) * 0.08;
+        r.orbitSpherical.theta += (r.targetSpherical.theta - r.orbitSpherical.theta) * 0.08;
+        r.orbitTarget.lerp(r.targetOrbitCenter, 0.08);
+
+        const x = r.orbitTarget.x + r.orbitSpherical.radius * Math.sin(r.orbitSpherical.phi) * Math.sin(r.orbitSpherical.theta);
+        const y = r.orbitTarget.y + r.orbitSpherical.radius * Math.cos(r.orbitSpherical.phi);
+        const z = r.orbitTarget.z + r.orbitSpherical.radius * Math.sin(r.orbitSpherical.phi) * Math.cos(r.orbitSpherical.theta);
+
+        r.camera.position.set(x, y, z);
+        r.camera.lookAt(r.orbitTarget);
+      } else {
+        const walkSpeed = 0.065;
+        const forward = new THREE.Vector3(Math.sin(r.fpYaw), 0, Math.cos(r.fpYaw));
+        const right = new THREE.Vector3(Math.cos(r.fpYaw), 0, -Math.sin(r.fpYaw));
+
+        if (r.keysPressed['KeyW'] || r.keysPressed['ArrowUp']) r.targetFpPosition.addScaledVector(forward, walkSpeed);
+        if (r.keysPressed['KeyS'] || r.keysPressed['ArrowDown']) r.targetFpPosition.addScaledVector(forward, -walkSpeed);
+        if (r.keysPressed['KeyA'] || r.keysPressed['ArrowLeft']) r.targetFpPosition.addScaledVector(right, walkSpeed);
+        if (r.keysPressed['KeyD'] || r.keysPressed['ArrowRight']) r.targetFpPosition.addScaledVector(right, -walkSpeed);
+
+        r.targetFpPosition.x = Math.max(-7.2, Math.min(7.2, r.targetFpPosition.x));
+        r.targetFpPosition.z = Math.max(-7.2, Math.min(7.2, r.targetFpPosition.z));
+
+        r.fpPosition.lerp(r.targetFpPosition, 0.12);
+        r.fpYaw += (r.targetFpYaw - r.fpYaw) * 0.14;
+        r.fpPitch += (r.targetFpPitch - r.fpPitch) * 0.14;
+
+        r.camera.position.copy(r.fpPosition);
+        const lookDir = new THREE.Vector3(
+          Math.sin(r.fpYaw) * Math.cos(r.fpPitch),
+          Math.sin(r.fpPitch),
+          Math.cos(r.fpYaw) * Math.cos(r.fpPitch)
+        );
+        r.camera.lookAt(r.fpPosition.clone().add(lookDir));
+      }
+
+      // Project 3D Hotspots
+      if (container) {
+        const widthHalf = container.clientWidth / 2;
+        const heightHalf = container.clientHeight / 2;
+        const isOverview = r.currentMode === 'overview' || r.currentMode === 'top';
+
+        r.hotspotItems.forEach((item) => {
+          let shouldShow = false;
+          if (isOverview && item.type === 'overview-badge') {
+            shouldShow = true;
+          } else if (!isOverview && item.room === r.currentMode && (item.type === 'room-switch' || item.type === 'room-portal')) {
+            shouldShow = true;
+          }
+
+          if (!shouldShow) {
+            item.el.style.display = 'none';
+            return;
+          }
+
+          const projected = item.pos.clone().project(r.camera);
+          if (projected.z > 1) {
+            item.el.style.display = 'none';
+            return;
+          }
+
+          const x = projected.x * widthHalf + widthHalf;
+          const y = -(projected.y * heightHalf) + heightHalf;
+          item.el.style.display = 'block';
+          item.el.style.left = `${x}px`;
+          item.el.style.top = `${y}px`;
+        });
+      }
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    return () => {
+      if (r.animFrameId) cancelAnimationFrame(r.animFrameId);
+      dom.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      dom.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('resize', onWindowResize);
+      renderer.dispose();
+      if (container) container.innerHTML = '';
+    };
+  }, [createProceduralTextures]);
+
+  // Reactive viewMode updater
+  useEffect(() => {
+    const r = threeRefs.current;
+    if (!r.scene || !r.camera) return;
+
+    r.currentMode = viewMode;
+
+    if (viewMode === 'overview') {
+      if (r.ceilingGroup) r.ceilingGroup.visible = false;
+      if (r.frontCutawayWallsGroup) r.frontCutawayWallsGroup.visible = false;
+      r.targetCameraFov = 46;
+      r.targetOrbitCenter.set(0, 1.0, 0);
+      r.targetSpherical = { radius: 24.5, phi: Math.PI / 3.05, theta: Math.PI / 4.2 };
+    } else if (viewMode === 'top') {
+      if (r.ceilingGroup) r.ceilingGroup.visible = false;
+      if (r.frontCutawayWallsGroup) r.frontCutawayWallsGroup.visible = false;
+      r.targetCameraFov = 46;
+      r.targetOrbitCenter.set(0, 0, 0);
+      r.targetSpherical = { radius: 26, phi: 0.06, theta: 0 };
+    } else if (ROOM_CONFIG[viewMode]) {
+      const cfg = ROOM_CONFIG[viewMode];
+      if (r.ceilingGroup) r.ceilingGroup.visible = true;
+      if (r.frontCutawayWallsGroup) r.frontCutawayWallsGroup.visible = true;
+      r.targetCameraFov = 76;
+      r.targetFpPosition.copy(cfg.center);
+      r.targetFpYaw = cfg.defaultYaw;
+      r.targetFpPitch = -0.03;
+    }
+  }, [viewMode]);
+
+  // Reactive telemetry state update
+  useEffect(() => {
+    const r = threeRefs.current;
+    if (!r.scene) return;
+
+    const reported = twinData?.reported || {};
+
+    Object.keys(ROOM_CONFIG).forEach((key) => {
+      const cfg = ROOM_CONFIG[key];
+      const isOn = reported[cfg.lightKey] === 1;
+
+      if (r.roomPointLights[key]) {
+        r.roomPointLights[key].intensity = isOn ? 1.85 : 0;
+      }
+      if (r.roomBulbMeshes[key]) {
+        r.roomBulbMeshes[key].material.color.setHex(isOn ? 0xfef08a : 0x475569);
+        r.roomBulbMeshes[key].material.emissive.setHex(isOn ? 0xf59e0b : 0x000000);
+        r.roomBulbMeshes[key].material.emissiveIntensity = isOn ? 2.6 : 0;
+      }
+      if (r.wallSwitchLeds[key]) {
+        const isMismatch = twinData?.mismatch?.detected && twinData?.mismatch?.zone === cfg.lightKey;
+        if (isMismatch) {
+          r.wallSwitchLeds[key].material.color.setHex(0xef4444);
+          r.wallSwitchLeds[key].material.emissive.setHex(0xdc2626);
+          r.wallSwitchLeds[key].material.emissiveIntensity = 2.5;
+        } else {
+          r.wallSwitchLeds[key].material.color.setHex(isOn ? 0x34d399 : 0x64748b);
+          r.wallSwitchLeds[key].material.emissive.setHex(isOn ? 0x10b981 : 0x000000);
+          r.wallSwitchLeds[key].material.emissiveIntensity = isOn ? 2 : 0;
+        }
+      }
+
+      const hsDot = document.getElementById(`hs-dot-${key}`);
+      const hsState = document.getElementById(`hs-state-${key}`);
+      const wallSub = document.getElementById(`wall-sw-sub-${key}`);
+
+      if (hsDot) {
+        hsDot.className = isOn
+          ? 'w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24]'
+          : 'w-2 h-2 rounded-full bg-slate-500';
+      }
+      if (hsState) {
+        hsState.textContent = isOn ? 'ON' : 'OFF';
+        hsState.className = isOn
+          ? 'text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 transition'
+          : 'text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 transition';
+      }
+      if (wallSub) {
+        wallSub.textContent = isOn ? 'Trạng thái: ĐANG SÁNG (Nhấn để tắt)' : 'Trạng thái: ĐANG TẮT (Nhấn để bật)';
+      }
+    });
+  }, [twinData]);
 
   return (
-    <>
-      {/* 1. Bộ điều khiển Camera linh hoạt theo góc nhìn */}
-      <CameraRig
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        autoRotate={autoRotate}
+    <div className="absolute inset-0 w-full h-full overflow-hidden">
+      <div ref={containerRef} className="absolute inset-0 w-full h-full" />
+      <div
+        ref={hotspotsLayerRef}
+        className="fixed inset-0 pointer-events-none z-10 overflow-hidden"
       />
-
-      {/* 2. Cyber Grid Vô Cực Dưới Chân */}
-      <Grid
-        renderOrder={-1}
-        position={[0, -0.52, 0]}
-        infiniteGrid
-        cellSize={0.8}
-        cellThickness={0.7}
-        cellColor="#1e293b"
-        sectionSize={4.0}
-        sectionThickness={1.4}
-        sectionColor="#0284c7"
-        fadeDistance={40}
-      />
-
-      {/* 3. Hệ thống Ánh Sáng Môi Trường ArchViz */}
-      <ambientLight intensity={0.52} />
-      <directionalLight
-        position={[18, 26, 16]}
-        intensity={1.35}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-12}
-        shadow-camera-right={12}
-        shadow-camera-top={12}
-        shadow-camera-bottom={-12}
-      />
-      <directionalLight position={[-16, 14, -14]} intensity={0.4} color="#38bdf8" />
-
-      {/* ================= KHỐI ĐẾ KIẾN TRÚC (16x16 UNITS FOOTPRINT) ================= */}
-      <RoundedBox args={[17.0, 0.5, 17.0]} radius={0.12} smoothness={4} position={[0, -0.25, 0]} receiveShadow>
-        <meshStandardMaterial color="#0f172a" roughness={0.6} metalness={0.2} />
-      </RoundedBox>
-
-      {/* ================= MẶT SÀN TỪNG PHÒNG VỚI VÂN GỖ / ĐÁ CAO CẤP ================= */}
-      {/* 1. Sàn Gỗ Tự Nhiên Phòng Khách (X: [-8, 0], Z: [0, 8]) */}
-      <mesh position={[-4, 0.01, 4]} receiveShadow>
-        <boxGeometry args={[7.88, 0.02, 7.88]} />
-        <meshStandardMaterial map={woodFloorTex} roughness={0.35} metalness={0.08} />
-      </mesh>
-
-      {/* 2. Sàn Gỗ Tự Nhiên Phòng Ngủ (X: [-8, 0], Z: [-8, 0]) */}
-      <mesh position={[-4, 0.01, -4]} receiveShadow>
-        <boxGeometry args={[7.88, 0.02, 7.88]} />
-        <meshStandardMaterial map={woodFloorTex} roughness={0.35} metalness={0.08} />
-      </mesh>
-
-      {/* 3. Sàn Đá Marble Sang Trọng Phòng Bếp (X: [0, 8], Z: [0, 8]) */}
-      <mesh position={[4, 0.01, 4]} receiveShadow>
-        <boxGeometry args={[7.88, 0.02, 7.88]} />
-        <meshStandardMaterial map={marbleTileTex} roughness={0.15} metalness={0.1} />
-      </mesh>
-
-      {/* 4. Sàn Nan Gỗ Teak Ngoài Trời Ban Công (X: [0, 8], Z: [-8, 0]) */}
-      <mesh position={[4, 0.01, -4]} receiveShadow>
-        <boxGeometry args={[7.88, 0.02, 7.88]} />
-        <meshStandardMaterial map={teakDeckTex} roughness={0.55} />
-      </mesh>
-
-      {/* ================= TƯỜNG NGOÀI CỐ ĐỊNH ================= */}
-      <mesh position={[-4, 1.75, -8.0]} castShadow receiveShadow>
-        <boxGeometry args={[8.0, 3.5, 0.2]} />
-        <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-      </mesh>
-      <mesh position={[-8.0, 1.75, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.2, 3.5, 16.0]} />
-        <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-      </mesh>
-
-      {/* Lan can kính cường lực Ban công ngoài trời */}
-      <group>
-        <mesh position={[4, 0.55, -8.0]}>
-          <boxGeometry args={[8.0, 1.1, 0.05]} />
-          <meshPhysicalMaterial
-            color="#bae6fd"
-            transparent
-            opacity={0.35}
-            roughness={0.05}
-            transmission={0.7}
-            thickness={0.15}
-          />
-        </mesh>
-        <mesh position={[4, 1.12, -8.0]}>
-          <boxGeometry args={[8.0, 0.05, 0.1]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} />
-        </mesh>
-        <mesh position={[8.0, 0.55, -4.0]}>
-          <boxGeometry args={[0.05, 1.1, 8.0]} />
-          <meshPhysicalMaterial
-            color="#bae6fd"
-            transparent
-            opacity={0.35}
-            roughness={0.05}
-            transmission={0.7}
-            thickness={0.15}
-          />
-        </mesh>
-        <mesh position={[8.0, 1.12, -4.0]}>
-          <boxGeometry args={[0.1, 0.05, 8.0]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} />
-        </mesh>
-      </group>
-
-      {/* ================= TƯỜNG NGOÀI CẮT NỬA ĐỘNG (FRONT/EAST CUTAWAY WALLS) ================= */}
-      <group visible={isFirstPerson}>
-        <mesh position={[0, 1.75, 8.0]} castShadow receiveShadow>
-          <boxGeometry args={[16.2, 3.5, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[8.0, 1.75, 4.0]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 3.5, 8.0]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-      </group>
-
-      {/* ================= HỆ THỐNG TRẦN NHÀ ĐỘNG VỚI ĐÈN DOWNLIGHT ÂM TRẦN ================= */}
-      <group visible={isFirstPerson}>
-        <mesh position={[-4, 3.52, 4]} receiveShadow>
-          <boxGeometry args={[8.0, 0.06, 8.0]} />
-          <meshStandardMaterial color="#f1f5f9" roughness={0.7} />
-        </mesh>
-        <mesh position={[-4, 3.52, -4]} receiveShadow>
-          <boxGeometry args={[8.0, 0.06, 8.0]} />
-          <meshStandardMaterial color="#f1f5f9" roughness={0.7} />
-        </mesh>
-        <mesh position={[4, 3.52, 4]} receiveShadow>
-          <boxGeometry args={[8.0, 0.06, 8.0]} />
-          <meshStandardMaterial color="#f1f5f9" roughness={0.7} />
-        </mesh>
-        <mesh position={[4, 3.52, -4]} receiveShadow>
-          <boxGeometry args={[8.0, 0.06, 8.0]} />
-          <meshStandardMaterial color="#334155" roughness={0.5} />
-        </mesh>
-      </group>
-
-      {/* ================= TƯỜNG CHỮ THẬP TRUNG TÂM & 4 CỬA LƯU THÔNG MỞ HÉ 75 ĐỘ ================= */}
-      {/* 1. Tường Z = 0 giữa Phòng Ngủ và Phòng Khách (Cửa mở tại X = -2, Z = 0) */}
-      <group>
-        <mesh position={[-5.35, 1.75, 0]} castShadow receiveShadow>
-          <boxGeometry args={[5.3, 3.5, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[-0.65, 1.75, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.3, 3.5, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[-2.0, 2.95, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.4, 1.1, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <OpenDoorwayFrame position={[-2.0, 0, 0]} rotation={[0, 0, 0]} doorSwing={1.3} />
-      </group>
-
-      {/* 2. Tường Z = 0 giữa Bếp và Ban Công (Cửa mở tại X = 4, Z = 0) */}
-      <group>
-        <mesh position={[1.65, 1.75, 0]} castShadow receiveShadow>
-          <boxGeometry args={[3.3, 3.5, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[6.35, 1.75, 0]} castShadow receiveShadow>
-          <boxGeometry args={[3.3, 3.5, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[4.0, 2.95, 0]} castShadow receiveShadow>
-          <boxGeometry args={[1.4, 1.1, 0.2]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <OpenDoorwayFrame position={[4.0, 0, 0]} rotation={[0, 0, 0]} doorSwing={-1.3} />
-      </group>
-
-      {/* 3. Tường X = 0 giữa Phòng Ngủ và Ban Công (Cửa mở tại X = 0, Z = -4) */}
-      <group>
-        <mesh position={[0, 1.75, -6.35]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 3.5, 3.3]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 1.75, -1.65]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 3.5, 3.3]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 2.95, -4.0]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 1.1, 1.4]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <OpenDoorwayFrame position={[0, 0, -4.0]} rotation={[0, Math.PI / 2, 0]} doorSwing={1.3} />
-      </group>
-
-      {/* 4. Tường X = 0 giữa Phòng Khách và Bếp (Cửa mở tại X = 0, Z = 4) */}
-      <group>
-        <mesh position={[0, 1.75, 1.65]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 3.5, 3.3]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 1.75, 6.35]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 3.5, 3.3]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <mesh position={[0, 2.95, 4.0]} castShadow receiveShadow>
-          <boxGeometry args={[0.2, 1.1, 1.4]} />
-          <meshStandardMaterial color="#f8fafc" roughness={0.6} />
-        </mesh>
-        <OpenDoorwayFrame position={[0, 0, 4.0]} rotation={[0, Math.PI / 2, 0]} doorSwing={-1.3} />
-      </group>
-
-      {/* Nẹp chân tường Skirting */}
-      <ArchitecturalSkirtingAndTrims />
-
-      {/* ================= KHÔNG GIAN NỘI THẤT LUXURY ARCHVIZ 4 PHÒNG ================= */}
-      <LivingRoomArchViz rugTex={livingRugTex} tvTex={tvScreenTex} artTex={artTex} />
-      <BedroomArchViz rugTex={bedRugTex} artTex={artTex} />
-      <KitchenArchViz />
-      <BalconyArchViz />
-
-      {/* ================= THIẾT BỊ GẮN TƯỜNG (THERMOSTAT & RANGE HOOD) ================= */}
-      <LivingRoomThermostat
-        position={[-4.5, 1.85, 0.12]}
-        temp={Number(reported.temperature !== undefined ? reported.temperature : 27.5).toFixed(1)}
-        hum={Number(reported.humidity !== undefined ? reported.humidity : 66.0).toFixed(0)}
-      />
-
-      {/* QUẠT HÚT THÔNG MINH 5 CÁNH KHÍ ĐỘNG HỌC (CHUẨN BẢN TRƯỚC, KHÔNG CỤC ĐEN, LÙI VỀ BẾP NẤU) */}
-      <SmartExhaustFan
-        position={[3.6, 2.05, 6.75]}
-        rotation={[Math.PI / 2, 0, 0]}
-        isFanRunning={reported.fan_kitchen === 1 || (reported.fan_speed && reported.fan_speed > 0)}
-        fanSpeed={reported.fan_speed !== undefined ? reported.fan_speed : (reported.fan_kitchen ? 3 : 0)}
-        onToggleFan={(lvl) => onToggle('setFan', lvl)}
-        showControlPad={viewMode === 'kitchen'}
-      />
-
-      {/* ================= HỆ THỐNG ĐÈN CHÙM VÒNG HALO 4 PHÒNG ================= */}
-      {/* 1. Đèn Phòng Ngủ: [-4, 3.35, -4] */}
-      <HaloCeilingChandelier
-        position={ROOM_CONFIG.bedroom.lightPos}
-        isLit={reported.light_bed === 1}
-        label="PHÒNG NGỦ"
-        onClick={() => onToggle('setBed', reported.light_bed !== 1)}
-      />
-
-      {/* 2. Đèn Ban Công: [1.2, 2.8, -4] */}
-      <HaloCeilingChandelier
-        position={ROOM_CONFIG.balcony.lightPos}
-        isLit={reported.light_balcony === 1}
-        label="BAN CÔNG"
-        onClick={() => onToggle('setBalcony', reported.light_balcony !== 1)}
-      />
-
-      {/* 3. Đèn Phòng Khách: [-4, 3.35, 4] */}
-      <HaloCeilingChandelier
-        position={ROOM_CONFIG.living.lightPos}
-        isLit={reported.light_living === 1}
-        label="PHÒNG KHÁCH"
-        onClick={() => onToggle('setLiving', reported.light_living !== 1)}
-      />
-
-      {/* 4. Đèn Bếp: [4, 3.35, 4] */}
-      <HaloCeilingChandelier
-        position={ROOM_CONFIG.kitchen.lightPos}
-        isLit={reported.light_kitchen === 1}
-        label="BẾP"
-        onClick={() => onToggle('setKitchen', reported.light_kitchen !== 1)}
-      />
-
-      {/* ================= CÔNG TẮC ĐÈN CẢM ỨNG GẮN TƯỜNG ================= */}
-      <WallSwitchHotspot
-        position={ROOM_CONFIG.bedroom.switchPos}
-        rotation={[0, -Math.PI / 2, 0]}
-        isLit={reported.light_bed === 1}
-        isMismatch={mismatch.detected && mismatch.zone === 'light_bed'}
-        roomName="Phòng Ngủ"
-        onToggle={() => onToggle('setBed', reported.light_bed !== 1)}
-        onToggleMismatch={() => onToggleMismatch('light_bed')}
-        showCard={viewMode === 'bedroom'}
-      />
-
-      <WallSwitchHotspot
-        position={ROOM_CONFIG.balcony.switchPos}
-        rotation={[0, Math.PI / 2, 0]}
-        isLit={reported.light_balcony === 1}
-        isMismatch={mismatch.detected && mismatch.zone === 'light_balcony'}
-        roomName="Ban Công"
-        onToggle={() => onToggle('setBalcony', reported.light_balcony !== 1)}
-        onToggleMismatch={() => onToggleMismatch('light_balcony')}
-        showCard={viewMode === 'balcony'}
-      />
-
-      <WallSwitchHotspot
-        position={ROOM_CONFIG.living.switchPos}
-        rotation={[0, -Math.PI / 2, 0]}
-        isLit={reported.light_living === 1}
-        isMismatch={mismatch.detected && mismatch.zone === 'light_living'}
-        roomName="Phòng Khách"
-        onToggle={() => onToggle('setLiving', reported.light_living !== 1)}
-        onToggleMismatch={() => onToggleMismatch('light_living')}
-        showCard={viewMode === 'living'}
-      />
-
-      <WallSwitchHotspot
-        position={ROOM_CONFIG.kitchen.switchPos}
-        rotation={[0, Math.PI / 2, 0]}
-        isLit={reported.light_kitchen === 1}
-        isMismatch={mismatch.detected && mismatch.zone === 'light_kitchen'}
-        roomName="Phòng Bếp"
-        onToggle={() => onToggle('setKitchen', reported.light_kitchen !== 1)}
-        onToggleMismatch={() => onToggleMismatch('light_kitchen')}
-        showCard={viewMode === 'kitchen'}
-      />
-
-      {/* ================= CỬA ĐIỀU HƯỚNG LIÊN PHÒNG (DOORWAY NAVIGATION PORTALS) ================= */}
-      {isFirstPerson &&
-        ROOM_CONFIG[viewMode]?.portals.map((portal, idx) => (
-          <Html key={idx} position={portal.pos} center distanceFactor={7.5}>
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                setViewMode(portal.to);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '9px 20px',
-                background: 'linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
-                borderRadius: '30px',
-                color: '#ffffff',
-                fontSize: '12px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                boxShadow: '0 0 20px #0284c7, 0 0 35px rgba(2, 132, 199, 0.65)',
-                whiteSpace: 'nowrap',
-                userSelect: 'none',
-                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-              title={`Nhấp để bước sang ${portal.to}`}
-            >
-              <span style={{ fontSize: '13px' }}>👣</span>
-              <span>{portal.label}</span>
-            </div>
-          </Html>
-        ))}
-
-      {/* ================= HUY HIỆU PHÒNG TRONG CHẾ ĐỘ TOÀN CẢNH (OVERVIEW ROOM BADGES) ================= */}
-      {viewMode === 'overview' &&
-        Object.values(ROOM_CONFIG).map((room) => {
-          const isLit = reported[room.lightKey] === 1;
-          return (
-            <Html key={room.id} position={room.badgePos} center distanceFactor={14}>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '9px 15px',
-                  background: isLit
-                    ? 'rgba(234, 179, 8, 0.28)'
-                    : 'rgba(15, 23, 42, 0.85)',
-                  backdropFilter: 'blur(14px)',
-                  WebkitBackdropFilter: 'blur(14px)',
-                  border: isLit
-                    ? '1px solid rgba(250, 204, 21, 0.85)'
-                    : '1px solid rgba(255, 255, 255, 0.18)',
-                  borderRadius: '18px',
-                  boxShadow: isLit
-                    ? '0 0 20px rgba(234, 179, 8, 0.4)'
-                    : '0 8px 25px rgba(0, 0, 0, 0.6)',
-                  whiteSpace: 'nowrap',
-                  userSelect: 'none'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span
-                    style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: isLit ? '#facc15' : '#64748b',
-                      boxShadow: isLit ? '0 0 8px #facc15' : 'none'
-                    }}
-                  />
-                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#ffffff' }}>
-                    {room.name.toUpperCase()}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '9px',
-                      fontWeight: 800,
-                      padding: '2px 6px',
-                      borderRadius: '8px',
-                      backgroundColor: isLit ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.1)',
-                      color: isLit ? '#fde047' : '#94a3b8'
-                    }}
-                  >
-                    {isLit ? 'ON' : 'OFF'}
-                  </span>
-                </div>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setViewMode(room.id);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '5px 12px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(56, 189, 248, 0.5)',
-                    background: 'rgba(2, 132, 199, 0.35)',
-                    color: '#38bdf8',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <span>🚶 Vào phòng</span>
-                </button>
-              </div>
-            </Html>
-          );
-        })}
-
-      {/* ================= CẢNH BÁO HOLOGRAPHIC NẾU CÓ SAI LỆCH MISMATCH ================= */}
-      {mismatch.detected && (
-        <group position={[-2.0, 3.8, 2.0]}>
-          <mesh>
-            <octahedronGeometry args={[0.38, 0]} />
-            <meshBasicMaterial color="#ef4444" wireframe />
-          </mesh>
-          <pointLight color="#ef4444" intensity={5} distance={6} />
-        </group>
-      )}
-    </>
+    </div>
   );
 }

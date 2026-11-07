@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
 import Apartment3D from './Apartment3D';
 import TwinHUD from './TwinHUD';
 
@@ -88,6 +87,17 @@ export default function App() {
     } catch (err) {
       console.error('[RPC Error]', err);
     }
+
+    // Gửi trực tiếp tức thì từ trình duyệt tới IP của ESP32 qua mạng LAN (Bỏ qua rào cản mạng nội bộ Docker/WSL2)
+    const esp32Ip = twinData?.reported?.ip;
+    if (esp32Ip) {
+      try {
+        const valParam = typeof state === 'boolean' ? (state ? 1 : 0) : state;
+        fetch(`http://${esp32Ip}/rpc?method=${method}&params=${valParam}`, { mode: 'no-cors' }).catch(() => {});
+      } catch (e) {
+        // Bỏ qua lỗi kết nối trực tiếp nếu ESP32 đang tắt
+      }
+    }
   };
 
   // Hàm mô phỏng / kiểm thử hiện tượng Sai lệch vật lý (Actuator Mismatch)
@@ -125,22 +135,15 @@ export default function App() {
         setAutoRotate={setAutoRotate}
       />
 
-      {/* Không gian đồ họa 3D Three.js Canvas */}
-      <Canvas
-        shadows
-        camera={{ position: [16, 18, 16], fov: 42, near: 0.1, far: 1000 }}
-        style={{ width: '100%', height: '100%' }}
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-      >
-        <Apartment3D
-          twinData={twinData}
-          onToggle={handleToggle}
-          onToggleMismatch={handleToggleMismatch}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          autoRotate={autoRotate}
-        />
-      </Canvas>
+      {/* Không gian đồ họa 3D Three.js Digital Twin & Villa Architecture */}
+      <Apartment3D
+        twinData={twinData}
+        onToggle={handleToggle}
+        onToggleMismatch={handleToggleMismatch}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        autoRotate={autoRotate}
+      />
     </div>
   );
 }

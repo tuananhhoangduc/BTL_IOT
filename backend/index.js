@@ -105,9 +105,13 @@ app.post('/api/rpc', (req, res) => {
   if (lastEsp32Ip) {
     const valParam = typeof params === 'boolean' ? (params ? 1 : 0) : params;
     const url = `http://${lastEsp32Ip}/rpc?method=${method}&params=${valParam}`;
-    http.get(url, (espRes) => {
-      // Đã gửi RPC tới ESP32
-    }).on('error', (err) => {
+    const reqEsp = http.get(url, (espRes) => {
+      // Đã gửi RPC tới ESP32 thành công
+    });
+    reqEsp.setTimeout(1200, () => {
+      reqEsp.destroy();
+    });
+    reqEsp.on('error', (err) => {
       console.warn(`[RPC -> ESP32] Lỗi kết nối tới ${url}:`, err.message);
     });
   }
