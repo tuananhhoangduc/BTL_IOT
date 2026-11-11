@@ -12,6 +12,8 @@ import {
   Sliders,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Compass,
   Eye,
   Tv,
@@ -27,13 +29,17 @@ export default function TwinHUD({
   viewMode,
   setViewMode,
   autoRotate,
-  setAutoRotate
+  setAutoRotate,
+  weatherState = {},
+  onWeatherChange
 }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isWeatherCollapsed, setIsWeatherCollapsed] = useState(false);
 
   const reported = twinData.reported || {};
   const mismatch = twinData.mismatch || {};
   const healthScore = twinData.health_score !== undefined ? twinData.health_score : 100;
+  const weather = weatherState || {};
 
   // Danh mục 6 thiết bị Smart Home điều khiển hai chiều RPC
   const smartDevices = [
@@ -196,34 +202,57 @@ export default function TwinHUD({
           <p style={styles.subTitle}>Mô hình 3D Căn hộ Thực tế • IoT Real-time</p>
         </div>
 
-        {/* Thanh trạng thái Sức khỏe bản sao số H(t) */}
+        {/* Thanh trạng thái Sức khỏe bản sao số H(t) - Chuẩn IEEE Digital Twin */}
         <div style={styles.healthCard}>
           <div style={styles.healthTopRow}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Activity size={16} color={healthScore >= 80 ? '#34d399' : '#f87171'} />
+              <Activity size={16} color={healthScore >= 80 ? '#34d399' : healthScore >= 50 ? '#fbbf24' : '#f87171'} />
               <span style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0' }}>Sức khỏe Twin H(t)</span>
             </div>
-            <span
-              style={{
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '13px',
-                fontWeight: 800,
-                color: healthScore >= 80 ? '#34d399' : '#f87171'
-              }}
-            >
-              {healthScore}%
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  background: healthScore >= 80 ? 'rgba(16, 185, 129, 0.15)' : healthScore >= 50 ? 'rgba(245, 158, 11, 0.18)' : 'rgba(239, 68, 68, 0.2)',
+                  color: healthScore >= 80 ? '#34d399' : healthScore >= 50 ? '#fbbf24' : '#f87171',
+                  border: `1px solid ${healthScore >= 80 ? 'rgba(52, 211, 153, 0.3)' : healthScore >= 50 ? 'rgba(251, 191, 36, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`
+                }}
+              >
+                {twinData.severity || (healthScore >= 80 ? 'NORMAL' : healthScore >= 50 ? 'WARNING' : 'CRITICAL')}
+              </span>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  color: healthScore >= 80 ? '#34d399' : healthScore >= 50 ? '#fbbf24' : '#f87171'
+                }}
+              >
+                {healthScore}%
+              </span>
+            </div>
           </div>
           <div style={styles.healthBarBg}>
             <div
               style={{
                 ...styles.healthBarFill,
                 width: `${healthScore}%`,
-                backgroundColor: healthScore >= 80 ? '#10b981' : '#ef4444',
-                boxShadow: healthScore >= 80 ? '0 0 10px #10b981' : '0 0 10px #ef4444'
+                backgroundColor: healthScore >= 80 ? '#10b981' : healthScore >= 50 ? '#f59e0b' : '#ef4444',
+                boxShadow: healthScore >= 80 ? '0 0 10px #10b981' : healthScore >= 50 ? '0 0 10px #f59e0b' : '0 0 10px #ef4444'
               }}
             />
           </div>
+          {twinData.status_message && (
+            <div style={{ marginTop: '5px', fontSize: '10px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', backgroundColor: healthScore >= 80 ? '#10b981' : healthScore >= 50 ? '#f59e0b' : '#ef4444' }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{twinData.status_message}</span>
+            </div>
+          )}
         </div>
 
         {/* Lưới 2x2 Cảm biến Môi trường Thông minh */}
@@ -627,6 +656,116 @@ export default function TwinHUD({
           </button>
         )}
       </nav>
+
+      {/* 5. WIDGET ĐỒNG BỘ THỜI TIẾT THỰC TẾ & GHI ĐÈ DEMO (GÓC PHẢI MÀN HÌNH) */}
+      <div style={styles.weatherCardRight}>
+        {/* Hàng Tiêu đề & Thông tin Vị trí */}
+        <div style={styles.weatherHeaderRow}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '20px', filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.4))' }}>
+              {weather.icon || '⛅'}
+            </span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.4px' }}>
+                  THỜI TIẾT NGOẠI CẢNH
+                </span>
+                {weather.mode === 'live' && (
+                  <span style={styles.weatherLiveBadge}>● LIVE</span>
+                )}
+              </div>
+              <div style={{ fontSize: '10px', color: '#94a3b8' }}>
+                Hà Nội • {weather.weatherLabel || 'Đang cập nhật...'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Thông số Gió & Mây */}
+            <div style={{ textAlign: 'right', fontSize: '10px', color: '#cbd5e1', lineHeight: '1.3' }}>
+              <div>💨 {Number(weather.windSpeed || 0).toFixed(1)} km/h</div>
+              <div style={{ color: '#94a3b8' }}>☁️ {Number(weather.cloudCover || 0).toFixed(0)}% mây</div>
+            </div>
+
+            {/* Nút thu gọn / mở rộng bảng thời tiết */}
+            <button
+              onClick={() => setIsWeatherCollapsed(!isWeatherCollapsed)}
+              style={styles.weatherCollapseBtn}
+              title={isWeatherCollapsed ? 'Mở rộng bảng thời tiết' : 'Thu gọn bảng thời tiết'}
+            >
+              {isWeatherCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+            </button>
+          </div>
+        </div>
+
+        {!isWeatherCollapsed && (
+          <>
+            {/* Thanh So Sánh Trong Nhà (DHT11) vs Ngoài Trời (API) */}
+            <div style={styles.weatherCompareRow}>
+              <div style={styles.weatherCompareCol}>
+                <span style={styles.weatherColSub}>NGOÀI TRỜI (API)</span>
+                <div style={styles.weatherColVal}>
+                  {Number(weather.outdoorTemp || 24).toFixed(1)}°C
+                  <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, marginLeft: '4px' }}>
+                    {Number(weather.outdoorHumidity || 70).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+
+              <div style={styles.weatherDeltaBadge}>
+                <span style={{ fontSize: '8px', color: '#94a3b8', fontWeight: 700 }}>CHÊNH LỆCH</span>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8' }}>
+                  ΔT {Math.abs((reported.temperature || 27.5) - (weather.outdoorTemp || 24)).toFixed(1)}°C
+                </span>
+              </div>
+
+              <div style={{ ...styles.weatherCompareCol, alignItems: 'flex-end' }}>
+                <span style={styles.weatherColSub}>TRONG NHÀ (DHT11)</span>
+                <div style={styles.weatherColVal}>
+                  {Number(reported.temperature || 27.5).toFixed(1)}°C
+                  <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 500, marginLeft: '4px' }}>
+                    {Number(reported.humidity || 66).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 5 Nút Ghi Đè Chế Độ Thời Tiết (Dành riêng cho Thuyết trình Demo) */}
+            <div style={styles.weatherDemoBar}>
+              <div style={styles.weatherDemoLabel}>GHI ĐÈ KỊCH BẢN THUYẾT TRÌNH (DEMO):</div>
+              <div style={styles.weatherBtnGrid}>
+                {[
+                  { id: 'live', icon: '🌐', label: 'Live API' },
+                  { id: 'sunny_day', icon: '☀️', label: 'Nắng ngày' },
+                  { id: 'sunset', icon: '🌇', label: 'Hoàng hôn' },
+                  { id: 'rainy_storm', icon: '🌧️', label: 'Mưa giông' },
+                  { id: 'clear_night', icon: '🌙', label: 'Ban đêm' }
+                ].map((btn) => {
+                  const isActive = (weather.mode || 'live') === btn.id;
+                  return (
+                    <button
+                      key={btn.id}
+                      onClick={() => onWeatherChange && onWeatherChange(btn.id)}
+                      style={{
+                        ...styles.weatherBtn,
+                        backgroundColor: isActive ? '#0284c7' : 'rgba(15, 23, 42, 0.6)',
+                        borderColor: isActive ? '#38bdf8' : 'rgba(255, 255, 255, 0.12)',
+                        color: isActive ? '#ffffff' : '#cbd5e1',
+                        boxShadow: isActive ? '0 0 10px rgba(56, 189, 248, 0.5)' : 'none',
+                        fontWeight: isActive ? 800 : 600
+                      }}
+                      title={`Chuyển sang kịch bản: ${btn.label}`}
+                    >
+                      <span>{btn.icon}</span>
+                      <span>{btn.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </>
   );
 }
@@ -845,6 +984,122 @@ const styles = {
     height: '100%',
     borderRadius: '2px',
     transition: 'width 0.4s ease'
+  },
+
+  weatherCardRight: {
+    position: 'fixed',
+    top: '20px',
+    right: '20px',
+    width: '320px',
+    zIndex: 50,
+    background: 'rgba(15, 23, 42, 0.78)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    border: '1px solid rgba(56, 189, 248, 0.28)',
+    borderRadius: '16px',
+    padding: '11px 13px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '7px',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+  },
+  weatherCollapseBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    padding: 0,
+    transition: 'all 0.2s ease'
+  },
+  weatherHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  weatherLiveBadge: {
+    fontSize: '8px',
+    fontWeight: 800,
+    padding: '1px 5px',
+    borderRadius: '4px',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    color: '#34d399',
+    border: '1px solid rgba(52, 211, 153, 0.4)',
+    letterSpacing: '0.4px'
+  },
+  weatherCompareRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto 1fr',
+    alignItems: 'center',
+    gap: '8px',
+    background: 'rgba(15, 23, 42, 0.65)',
+    borderRadius: '9px',
+    padding: '5px 9px',
+    border: '1px solid rgba(255, 255, 255, 0.06)'
+  },
+  weatherCompareCol: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  weatherColSub: {
+    fontSize: '8px',
+    color: '#94a3b8',
+    fontWeight: 700,
+    letterSpacing: '0.3px'
+  },
+  weatherColVal: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: '13px',
+    fontWeight: 800,
+    color: '#f8fafc',
+    display: 'flex',
+    alignItems: 'center'
+  },
+  weatherDeltaBadge: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '2px 7px',
+    background: 'rgba(56, 189, 248, 0.12)',
+    border: '1px solid rgba(56, 189, 248, 0.3)',
+    borderRadius: '7px'
+  },
+  weatherDemoBar: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    marginTop: '2px'
+  },
+  weatherDemoLabel: {
+    fontSize: '8.5px',
+    fontWeight: 700,
+    color: '#94a3b8',
+    letterSpacing: '0.4px'
+  },
+  weatherBtnGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(5, 1fr)',
+    gap: '3px'
+  },
+  weatherBtn: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '2px',
+    padding: '4px 1px',
+    borderRadius: '7px',
+    border: '1px solid',
+    fontSize: '9px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    whiteSpace: 'nowrap'
   },
 
   controlsHeader: {

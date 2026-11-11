@@ -78,7 +78,8 @@ export default function Apartment3D({
   onToggleMismatch,
   viewMode = 'overview',
   setViewMode,
-  autoRotate = false
+  autoRotate = false,
+  weatherState = {}
 }) {
   const containerRef = useRef(null);
   const hotspotsLayerRef = useRef(null);
@@ -88,6 +89,23 @@ export default function Apartment3D({
     camera: null,
     renderer: null,
     animFrameId: null,
+    ambientLight: null,
+    hemiLight: null,
+    dirLight: null,
+    skyCanvas: null,
+    skyCtx: null,
+    skyTexture: null,
+    skyDomeMesh: null,
+    rainParticles: null,
+    rainPositions: null,
+    rainVelocities: null,
+    rainCount: 2500,
+    exteriorLights: [],
+    exteriorMaterials: [],
+    roadMat: null,
+    courtyardMat: null,
+    lastLightningTime: 0,
+    lightningUntil: 0,
     roomPointLights: {},
     roomBulbMeshes: {},
     wallSwitchLeds: {},
@@ -123,7 +141,8 @@ export default function Apartment3D({
     setViewMode,
     twinData,
     viewMode,
-    autoRotate
+    autoRotate,
+    weatherState
   });
 
   useEffect(() => {
@@ -133,9 +152,10 @@ export default function Apartment3D({
       setViewMode,
       twinData,
       viewMode,
-      autoRotate
+      autoRotate,
+      weatherState
     };
-  }, [onToggle, onToggleMismatch, setViewMode, twinData, viewMode, autoRotate]);
+  }, [onToggle, onToggleMismatch, setViewMode, twinData, viewMode, autoRotate, weatherState]);
 
   // Procedural Canvas Textures
   const createProceduralTextures = useCallback((renderer) => {
@@ -311,6 +331,153 @@ export default function Apartment3D({
     return { fabricBumpTex, woodTex, tileTex, deckTex, tvTex, stoneTex, grassTex, bldgTex };
   }, []);
 
+  // Weather Environment Synchronization & Visual Adjustments
+  const updateWeatherVisuals = useCallback((weather) => {
+    const r = threeRefs.current;
+    if (!r.scene || !r.skyCtx) return;
+
+    const mode = weather?.mode || 'live';
+    const isDay = weather?.isDay !== undefined ? weather.isDay : true;
+    const isRaining = !!weather?.isRaining;
+
+    // 1. Sky Dome Linear Gradient
+    const ctx = r.skyCtx;
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+
+    let ambientColor = 0xffffff;
+    let ambientIntensity = 0.72;
+    let hemiSky = 0xe0f2fe;
+    let hemiGround = 0x64748b;
+    let hemiIntensity = 0.65;
+    let dirColor = 0xfffbeb;
+    let dirIntensity = 2.2;
+    let dirPos = [18, 28, 14];
+    let exteriorOn = false;
+    let wetLook = isRaining;
+
+    if (mode === 'sunset') {
+      grad.addColorStop(0, '#311005');
+      grad.addColorStop(0.35, '#7c2d12');
+      grad.addColorStop(0.68, '#c2410c');
+      grad.addColorStop(0.85, '#ea580c');
+      grad.addColorStop(1, '#fed7aa');
+      ambientColor = 0xfdba74;
+      ambientIntensity = 0.55;
+      hemiSky = 0xfb923c;
+      hemiGround = 0x7c2d12;
+      hemiIntensity = 0.5;
+      dirColor = 0xf97316;
+      dirIntensity = 1.6;
+      dirPos = [26, 12, 18];
+      exteriorOn = true;
+    } else if (mode === 'rainy_storm' || isRaining) {
+      grad.addColorStop(0, '#090d16');
+      grad.addColorStop(0.4, '#1e293b');
+      grad.addColorStop(0.75, '#334155');
+      grad.addColorStop(1, '#475569');
+      ambientColor = 0x94a3b8;
+      ambientIntensity = 0.42;
+      hemiSky = 0x64748b;
+      hemiGround = 0x1e293b;
+      hemiIntensity = 0.45;
+      dirColor = 0x93c5fd;
+      dirIntensity = 0.9;
+      dirPos = [12, 22, 10];
+      exteriorOn = !isDay;
+      wetLook = true;
+    } else if (mode === 'clear_night' || !isDay) {
+      grad.addColorStop(0, '#020617');
+      grad.addColorStop(0.45, '#090d16');
+      grad.addColorStop(0.78, '#0f172a');
+      grad.addColorStop(0.92, '#1e293b');
+      grad.addColorStop(1, '#334155');
+      ambientColor = 0x38bdf8;
+      ambientIntensity = 0.28;
+      hemiSky = 0x1e293b;
+      hemiGround = 0x020617;
+      hemiIntensity = 0.3;
+      dirColor = 0x60a5fa;
+      dirIntensity = 0.45;
+      dirPos = [16, 22, 12];
+      exteriorOn = true;
+    } else {
+      // Sunny Day
+      grad.addColorStop(0, '#0284c7');
+      grad.addColorStop(0.45, '#38bdf8');
+      grad.addColorStop(0.78, '#7dd3fc');
+      grad.addColorStop(0.92, '#bae6fd');
+      grad.addColorStop(1, '#e0f2fe');
+      ambientColor = 0xffffff;
+      ambientIntensity = 0.72;
+      hemiSky = 0xe0f2fe;
+      hemiGround = 0x64748b;
+      hemiIntensity = 0.65;
+      dirColor = 0xfffbeb;
+      dirIntensity = 2.2;
+      dirPos = [18, 28, 14];
+      exteriorOn = false;
+    }
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 16, 256);
+    if (r.skyTexture) r.skyTexture.needsUpdate = true;
+
+    // 2. Light adjustments
+    if (r.ambientLight) {
+      r.ambientLight.color.setHex(ambientColor);
+      r.ambientLight.intensity = ambientIntensity;
+    }
+    if (r.hemiLight) {
+      r.hemiLight.color.setHex(hemiSky);
+      r.hemiLight.groundColor.setHex(hemiGround);
+      r.hemiLight.intensity = hemiIntensity;
+    }
+    if (r.dirLight) {
+      r.dirLight.color.setHex(dirColor);
+      r.dirLight.intensity = dirIntensity;
+      r.dirLight.position.set(...dirPos);
+    }
+
+    // 3. Fog adjustment
+    if (r.scene) {
+      if (mode === 'rainy_storm' || isRaining) {
+        r.scene.fog = new THREE.FogExp2(0x1e293b, 0.016);
+      } else if (mode === 'sunset') {
+        r.scene.fog = new THREE.FogExp2(0x7c2d12, 0.009);
+      } else if (!isDay) {
+        r.scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
+      } else {
+        r.scene.fog = new THREE.FogExp2(0x93c5fd, 0.006);
+      }
+    }
+
+    // 4. Rain Particles Visibility
+    if (r.rainParticles) {
+      r.rainParticles.visible = isRaining;
+    }
+
+    // 5. Wet ground reflective materials
+    if (r.roadMat) {
+      r.roadMat.roughness = wetLook ? 0.15 : 0.88;
+      r.roadMat.metalness = wetLook ? 0.35 : 0.0;
+      r.roadMat.needsUpdate = true;
+    }
+    if (r.courtyardMat) {
+      r.courtyardMat.roughness = wetLook ? 0.22 : 0.78;
+      r.courtyardMat.metalness = wetLook ? 0.25 : 0.0;
+      r.courtyardMat.needsUpdate = true;
+    }
+
+    // 6. Exterior Lights & Glowing Materials
+    r.exteriorLights.forEach((light) => {
+      light.intensity = exteriorOn ? (mode === 'sunset' ? 0.5 : 1.0) : 0;
+    });
+    r.exteriorMaterials.forEach((mat) => {
+      mat.emissiveIntensity = exteriorOn ? (mode === 'sunset' ? 1.0 : 2.2) : 0;
+      mat.needsUpdate = true;
+    });
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -343,10 +510,12 @@ export default function Apartment3D({
     // Environmental Lights
     const ambient = new THREE.AmbientLight(0xe2e8f0, 0.75);
     scene.add(ambient);
+    r.ambientLight = ambient;
 
     const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x3b2314, 0.62);
     hemiLight.position.set(0, 35, 0);
     scene.add(hemiLight);
+    r.hemiLight = hemiLight;
 
     const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.95);
     dirLight.position.set(22, 34, 24);
@@ -363,6 +532,11 @@ export default function Apartment3D({
     dirLight.shadow.bias = -0.0012;
     dirLight.shadow.normalBias = 0.03;
     scene.add(dirLight);
+    r.dirLight = dirLight;
+
+    // Reset exterior elements
+    r.exteriorLights = [];
+    r.exteriorMaterials = [];
 
     // ============================================================================
     // SURROUNDING ENVIRONMENT (Villa Estate, Courtyard, Pool, Trees, Street)
@@ -380,11 +554,16 @@ export default function Apartment3D({
     skyGrad.addColorStop(1, '#475569');
     sCtx.fillStyle = skyGrad;
     sCtx.fillRect(0, 0, 16, 256);
+    const skyTexture = new THREE.CanvasTexture(skyCanvas);
     const skyDome = new THREE.Mesh(
       new THREE.SphereGeometry(145, 32, 24),
-      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(skyCanvas), side: THREE.BackSide, fog: false })
+      new THREE.MeshBasicMaterial({ map: skyTexture, side: THREE.BackSide, fog: false })
     );
     scene.add(skyDome);
+    r.skyCanvas = skyCanvas;
+    r.skyCtx = sCtx;
+    r.skyTexture = skyTexture;
+    r.skyDomeMesh = skyDome;
 
     // 2. Outer Grass Ground Plane
     const lawnMesh = new THREE.Mesh(
@@ -395,6 +574,7 @@ export default function Apartment3D({
     lawnMesh.position.y = -0.58;
     lawnMesh.receiveShadow = true;
     scene.add(lawnMesh);
+    r.lawnMat = lawnMesh.material;
 
     // 3. Villa Courtyard Stone Slab
     const courtyardSlab = new THREE.Mesh(
@@ -404,6 +584,7 @@ export default function Apartment3D({
     courtyardSlab.position.set(2.0, -0.45, 1.0);
     courtyardSlab.receiveShadow = true;
     scene.add(courtyardSlab);
+    r.courtyardMat = courtyardSlab.material;
 
     // Garden Beds
     const addGardenBed = (gx, gz, gw, gd) => {
@@ -448,13 +629,20 @@ export default function Apartment3D({
       stepMesh.receiveShadow = true;
       scene.add(stepMesh);
 
+      const stepGlowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.8 });
+      r.exteriorMaterials.push(stepGlowMat);
       const stepGlow = new THREE.Mesh(
         new THREE.BoxGeometry(stepW - 0.2, 0.025, 0.04),
-        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.8 })
+        stepGlowMat
       );
       stepGlow.position.set(-2.5, stepY + 0.02, 8.8 + s * 0.55 + stepD / 2 + 0.02);
       scene.add(stepGlow);
     }
+
+    const stepLight = new THREE.PointLight(0xf59e0b, 0.8, 6);
+    stepLight.position.set(-2.5, 0.4, 9.8);
+    scene.add(stepLight);
+    r.exteriorLights.push(stepLight);
 
     // 5. Pool Deck & Infinity Pool
     const poolDeck = new THREE.Mesh(
@@ -496,6 +684,11 @@ export default function Apartment3D({
     scene.add(poolWaterMesh);
     r.poolWaterMesh = poolWaterMesh;
 
+    const poolUnderwaterLight = new THREE.PointLight(0x38bdf8, 1.2, 8);
+    poolUnderwaterLight.position.set(13.0, 0.3, -0.2);
+    scene.add(poolUnderwaterLight);
+    r.exteriorLights.push(poolUnderwaterLight);
+
     [-4.2, 3.8].forEach((lz) => {
       const lounger = new THREE.Mesh(
         new THREE.BoxGeometry(1.9, 0.18, 0.85),
@@ -529,18 +722,27 @@ export default function Apartment3D({
       pillar.position.set(px, 0.48, 16.8);
       pillar.castShadow = true;
       scene.add(pillar);
+      const pCapMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.2 });
+      r.exteriorMaterials.push(pCapMat);
       const pCap = new THREE.Mesh(
         new THREE.BoxGeometry(0.5, 0.12, 0.5),
-        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.2 })
+        pCapMat
       );
       pCap.position.set(px, 1.38, 16.8);
       scene.add(pCap);
+
+      const pLight = new THREE.PointLight(0xf59e0b, 0.7, 5);
+      pLight.position.set(px, 1.6, 16.8);
+      scene.add(pLight);
+      r.exteriorLights.push(pLight);
     });
 
     // 7. Street & Dashed Line
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.88 });
+    r.roadMat = roadMat;
     const roadMesh = new THREE.Mesh(
       new THREE.BoxGeometry(120, 0.14, 5.2),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.88 })
+      roadMat
     );
     roadMesh.position.set(0, -0.50, 20.0);
     roadMesh.receiveShadow = true;
@@ -590,9 +792,11 @@ export default function Apartment3D({
       c3.castShadow = true;
       tg.add(c3);
 
+      const ringMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.0 });
+      r.exteriorMaterials.push(ringMat);
       const ring = new THREE.Mesh(
         new THREE.CylinderGeometry(0.45, 0.5, 0.06, 16),
-        new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 2.0 })
+        ringMat
       );
       ring.position.y = 0.04;
       tg.add(ring);
@@ -629,6 +833,45 @@ export default function Apartment3D({
       bMesh.lookAt(0, bh / 2, 0);
       scene.add(bMesh);
     }
+
+    // 10. Rain Particle System
+    const rainCount = 2500;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainPositions = new Float32Array(rainCount * 6);
+    const rainVelocities = new Float32Array(rainCount);
+
+    for (let i = 0; i < rainCount; i++) {
+      const rx = (Math.random() - 0.5) * 65;
+      const ry = Math.random() * 25 + 0.5;
+      const rz = (Math.random() - 0.5) * 65;
+      const len = 0.35 + Math.random() * 0.25;
+
+      rainPositions[i * 6 + 0] = rx;
+      rainPositions[i * 6 + 1] = ry;
+      rainPositions[i * 6 + 2] = rz;
+
+      rainPositions[i * 6 + 3] = rx;
+      rainPositions[i * 6 + 4] = ry - len;
+      rainPositions[i * 6 + 5] = rz;
+
+      rainVelocities[i] = 18 + Math.random() * 12;
+    }
+
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+    const rainMat = new THREE.LineBasicMaterial({
+      color: 0x93c5fd,
+      transparent: true,
+      opacity: 0.65,
+      depthWrite: false
+    });
+    const rainParticles = new THREE.LineSegments(rainGeo, rainMat);
+    rainParticles.visible = false;
+    scene.add(rainParticles);
+
+    r.rainParticles = rainParticles;
+    r.rainPositions = rainPositions;
+    r.rainVelocities = rainVelocities;
+    r.rainCount = rainCount;
 
     // ============================================================================
     // VILLA ARCHITECTURE & LOGICALLY CORRECT PASSAGEWAYS
@@ -953,20 +1196,10 @@ export default function Apartment3D({
     fabricBox(0.95, 0.16, 0.42, 0xfde68a, -6.15, 0.76, -5.95);
     fabricBox(0.95, 0.16, 0.42, 0xfde68a, -4.65, 0.76, -5.95);
 
-    // Nightstand
+    // Nightstand (Clean surface, no bedside lamp)
     box(0.85, 0.55, 0.75, 0x451a03, -3.15, 0.36, -7.25, 0.5);
-    const lampStand = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.12, 0.35, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.7, roughness: 0.2 })
-    );
-    lampStand.position.set(-3.15, 0.81, -7.25);
-    scene.add(lampStand);
-    const lampShade = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.26, 0.32, 20),
-      new THREE.MeshStandardMaterial({ color: 0xfef3c7, emissive: 0xf59e0b, emissiveIntensity: 1.6 })
-    );
-    lampShade.position.set(-3.15, 1.05, -7.25);
-    scene.add(lampShade);
+    box(0.24, 0.08, 0.15, 0x1e293b, -3.15, 0.68, -7.25, 0.3); // Bedside digital clock
+    glowStrip(0.18, 0.03, 0.02, 0x38bdf8, -3.15, 0.68, -7.16, 1.6); // Cyan LED time display
 
     // Wardrobe positioned cleanly away from window (Z = -1.35, stops before window at Z = -2.6)
     box(1.05, 2.85, 2.2, 0x1e293b, -7.32, 1.52, -1.35, 0.45);
@@ -1037,9 +1270,13 @@ export default function Apartment3D({
     // North counter section (Cooktop & Range Hood)
     box(4.4, 0.84, 0.85, 0xf8fafc, 5.2, 0.50, 0.55, 0.3); // Base
     box(4.5, 0.08, 0.92, 0x1e293b, 5.2, 0.96, 0.55, 0.2, 0.3); // Quartz countertop
-    // Upper wall cabinets with under-cabinet warm LED
-    box(3.8, 0.95, 0.55, 0xe2e8f0, 4.9, 2.75, 0.40, 0.35);
-    glowStrip(3.7, 0.04, 0.12, 0xfef08a, 4.9, 2.25, 0.50, 2.2);
+    // Upper wall cabinets with open alcove for range hood (split into Left & Right)
+    // Left upper cabinet (X = 3.0 to 4.15)
+    box(1.15, 0.95, 0.45, 0xe2e8f0, 3.57, 2.80, 0.35, 0.35);
+    glowStrip(1.10, 0.03, 0.08, 0xfef08a, 3.57, 2.30, 0.42, 2.0);
+    // Right upper cabinet (X = 5.45 to 7.15)
+    box(1.70, 0.95, 0.45, 0xe2e8f0, 6.30, 2.80, 0.35, 0.35);
+    glowStrip(1.65, 0.03, 0.08, 0xfef08a, 6.30, 2.30, 0.42, 2.0);
 
     // Induction cooktop at X = 4.8, Z = 0.55
     box(1.2, 0.04, 0.75, 0x090d16, 4.8, 1.02, 0.55, 0.15, 0.5);
@@ -1053,39 +1290,101 @@ export default function Apartment3D({
     burnerGlow2.position.set(5.1, 1.055, 0.55);
     scene.add(burnerGlow2);
 
-    // Range hood with 6-blade spinning exhaust turbine fan directly over cooktop
-    const hoodGroup = new THREE.Group();
-    hoodGroup.position.set(4.8, 2.65, 0.55);
-    const hoodBody = new THREE.Mesh(
-      new THREE.BoxGeometry(1.45, 0.3, 0.95),
-      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.25 })
-    );
-    hoodGroup.add(hoodBody);
-    const chimney = new THREE.Mesh(
-      new THREE.BoxGeometry(0.55, 1.2, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.25 })
-    );
-    chimney.position.y = 0.75;
-    hoodGroup.add(chimney);
+    // Range hood chimney & canopy in the open alcove (100% unblocked, zero cabinet overlap)
+    box(0.50, 1.25, 0.32, 0x64748b, 4.8, 3.32, 0.22, 0.2, 0.8); // Stainless chimney
+    box(1.28, 0.15, 0.72, 0x334155, 4.8, 2.62, 0.55, 0.3, 0.7); // Canopy body directly over cooktop
+    box(1.28, 0.08, 0.03, 0x0f172a, 4.8, 2.62, 0.90, 0.1, 0.8); // Front display panel
+    glowStrip(0.85, 0.015, 0.015, 0x38bdf8, 4.8, 2.62, 0.92, 2.0); // Touch LED strip
 
-    const fanBladesMesh = new THREE.Group();
-    fanBladesMesh.position.set(0, -0.18, 0);
-    const hub = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.14, 0.08, 16),
-      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.9 })
+    // Horizontal 7-Blade Exhaust Turbine Fan (Blowing straight down toward the cooktop)
+    const hoodFanGroup = new THREE.Group();
+    hoodFanGroup.position.set(4.8, 2.48, 0.55); // Centered directly over induction cooktop
+
+    // Outer Aerodynamic Cowl & Shroud (Horizontal intake opening)
+    const cowl = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.36, 0.38, 0.07, 32, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2, side: THREE.DoubleSide })
     );
-    fanBladesMesh.add(hub);
-    for (let i = 0; i < 6; i++) {
+    cowl.position.set(0, 0.03, 0);
+    hoodFanGroup.add(cowl);
+
+    // Cyan Neon Accent Halo Ring (Horizontal ring in X-Z plane)
+    const haloRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.38, 0.016, 16, 32),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 2.2 })
+    );
+    haloRing.rotation.x = Math.PI / 2;
+    haloRing.position.set(0, 0, 0);
+    hoodFanGroup.add(haloRing);
+
+    // Central Motor Hub Housing
+    const motorCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 0.06, 24),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.2 })
+    );
+    motorCore.position.set(0, 0.03, 0);
+    hoodFanGroup.add(motorCore);
+
+    // Horizontal Spinning Rotor Assembly (7 Aerodynamic Dual-Tone Blades in X-Z plane)
+    const fanBladesMesh = new THREE.Group();
+    fanBladesMesh.position.set(0, -0.01, 0);
+
+    // Central Spinner Cone (Pointing straight down toward the cooktop)
+    const spinner = new THREE.Mesh(
+      new THREE.ConeGeometry(0.10, 0.10, 24),
+      new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 1.5,
+        metalness: 0.6,
+        roughness: 0.2
+      })
+    );
+    spinner.rotation.x = Math.PI; // Pointing down along -Y toward cooktop
+    spinner.position.set(0, -0.04, 0);
+    fanBladesMesh.add(spinner);
+
+    const bladeMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 1.4,
+      metalness: 0.4,
+      roughness: 0.2
+    });
+    const tipMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x7dd3fc,
+      emissiveIntensity: 2.2
+    });
+
+    for (let i = 0; i < 7; i++) {
+      const angle = (i * Math.PI * 2) / 7;
+      const bladeGroup = new THREE.Group();
+      bladeGroup.rotation.y = angle; // Spread horizontally in X-Z plane
+
+      // Main blade body
       const blade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.44, 0.025, 0.13),
-        new THREE.MeshStandardMaterial({ color: 0x7dd3fc, emissive: 0x0284c7, emissiveIntensity: 0.5 })
+        new THREE.BoxGeometry(0.22, 0.018, 0.075),
+        bladeMat
       );
-      blade.rotation.y = (i * Math.PI) / 3;
-      blade.position.y = (i % 2) * 0.006;
-      fanBladesMesh.add(blade);
+      blade.position.set(0.18, 0, 0);
+      blade.rotation.x = 0.28; // Aerodynamic pitch blowing down
+      bladeGroup.add(blade);
+
+      // Bright contrasting tip for maximum spinning motion visibility
+      const tip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.065, 0.020, 0.078),
+        tipMat
+      );
+      tip.position.set(0.29, 0, 0);
+      tip.rotation.x = 0.28;
+      bladeGroup.add(tip);
+
+      fanBladesMesh.add(bladeGroup);
     }
-    hoodGroup.add(fanBladesMesh);
-    scene.add(hoodGroup);
+
+    hoodFanGroup.add(fanBladesMesh);
+    scene.add(hoodFanGroup);
     r.fanBladesMesh = fanBladesMesh;
 
     // East counter section (Sink & Refrigerator)
@@ -1439,11 +1738,11 @@ export default function Apartment3D({
         r.poolWaterMesh.position.y = 0.02 + Math.sin(Date.now() * 0.002) * 0.004;
       }
 
-      // Rotating Kitchen Exhaust Fan
+      // Rotating Kitchen Exhaust Fan (Horizontal spin blowing down toward cooktop)
       const curFanSpeed = callbacksRef.current.twinData?.reported?.fan_speed || (callbacksRef.current.twinData?.reported?.fan_kitchen ? 3 : 0);
       if (r.fanBladesMesh && curFanSpeed > 0) {
-        const speeds = [0, 0.08, 0.22, 0.45];
-        r.fanBladesMesh.rotation.y += speeds[curFanSpeed] || 0.1;
+        const speeds = [0, 0.12, 0.28, 0.56];
+        r.fanBladesMesh.rotation.y += speeds[curFanSpeed] || 0.15;
       }
 
       // Buzzer Alarm Beacon Pulse
@@ -1458,6 +1757,57 @@ export default function Apartment3D({
         } else {
           r.buzzerPointLight.intensity = 0;
           r.buzzerBeaconMesh.material.emissiveIntensity = 0.15;
+        }
+      }
+
+      // Rain particles motion
+      const currentWs = callbacksRef.current.weatherState;
+      if (currentWs?.isRaining && r.rainParticles && r.rainPositions && r.rainVelocities) {
+        const positions = r.rainPositions;
+        const velocities = r.rainVelocities;
+        const count = r.rainCount;
+        const windTilt = (currentWs.windSpeed || 10) * 0.012;
+        const dt = 0.016;
+
+        for (let i = 0; i < count; i++) {
+          const idx = i * 6;
+          const dropSpeed = velocities[i] * dt;
+          positions[idx + 1] -= dropSpeed;
+          positions[idx + 4] -= dropSpeed;
+          positions[idx + 0] += windTilt * dropSpeed;
+          positions[idx + 3] += windTilt * dropSpeed;
+
+          // Recycle raindrop if it hits ground (y <= -0.45)
+          if (positions[idx + 4] < -0.45) {
+            const rx = (Math.random() - 0.5) * 65;
+            const ry = 22 + Math.random() * 8;
+            const rz = (Math.random() - 0.5) * 65;
+            const len = 0.35 + Math.random() * 0.25;
+
+            positions[idx + 0] = rx;
+            positions[idx + 1] = ry;
+            positions[idx + 2] = rz;
+            positions[idx + 3] = rx - windTilt * len;
+            positions[idx + 4] = ry - len;
+            positions[idx + 5] = rz;
+          }
+        }
+        r.rainParticles.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Lightning flash in rainy_storm mode
+      if (currentWs?.mode === 'rainy_storm') {
+        const now = performance.now();
+        if (now > r.lightningUntil) {
+          if (now - r.lastLightningTime > 9000 + Math.random() * 5000) {
+            r.lastLightningTime = now;
+            r.lightningUntil = now + 120; // 120ms flash
+            if (r.dirLight) r.dirLight.intensity = 4.2;
+            if (r.ambientLight) r.ambientLight.intensity = 1.8;
+          } else {
+            if (r.dirLight && r.dirLight.intensity > 1.2) r.dirLight.intensity = 0.9;
+            if (r.ambientLight && r.ambientLight.intensity > 0.5) r.ambientLight.intensity = 0.42;
+          }
         }
       }
 
@@ -1541,6 +1891,7 @@ export default function Apartment3D({
       renderer.render(scene, camera);
     };
 
+    updateWeatherVisuals(callbacksRef.current.weatherState);
     animate();
 
     return () => {
@@ -1555,7 +1906,7 @@ export default function Apartment3D({
       renderer.dispose();
       if (container) container.innerHTML = '';
     };
-  }, [createProceduralTextures]);
+  }, [createProceduralTextures, updateWeatherVisuals]);
 
   // Reactive viewMode updater
   useEffect(() => {
@@ -1639,6 +1990,11 @@ export default function Apartment3D({
       }
     });
   }, [twinData]);
+
+  // Reactive weather updater
+  useEffect(() => {
+    updateWeatherVisuals(weatherState);
+  }, [weatherState, updateWeatherVisuals]);
 
   return (
     <div className="absolute inset-0 w-full h-full overflow-hidden">

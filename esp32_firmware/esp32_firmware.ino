@@ -8,17 +8,20 @@
 // =========================================================================
 // 1. CẤU HÌNH WIFI, THINGSBOARD VÀ DIGITAL TWIN BACKEND
 // =========================================================================
-const char* WIFI_SSID = "Mạng";            // Tên Wi-Fi mới
-const char* WIFI_PASS = "12354679";        // Mật khẩu Wi-Fi
+// CHÚ Ý: Băng tần Hotspot điện thoại PHẢI để 2.4 GHz (ESP32 không bắt được 5 GHz)
+const char* WIFI_SSID = "Redmi";            // Tên Hotspot Wi-Fi
+const char* WIFI_PASS = "DungDepZai";        // Mật khẩu Wi-Fi
 
 // ThingsBoard Cloud
 const char* TB_SERVER = "thingsboard.cloud";
 const int   TB_PORT   = 1883;
-const char* TB_TOKEN  = "XiP9UJASXyIQd3aBzzfr";  // Access Token thiết bị ESP32_IOT
+// Lưu ý: Token phân biệt HOA/thường ("XiP9UJASxyIQd3aBzzfr" với 'x' thường)
+const char* TB_TOKEN  = "XiP9UJASxyIQd3aBzzfr";  
 
-// Địa chỉ IP máy tính đang chạy mô hình 3D (Cổng 5000 của Backend)
-// Máy tính hiện tại đang nhận IP mạng "Mạng" là 10.22.196.234
-const char* BACKEND_SERVER = "http://10.22.196.234:5000";
+// Địa chỉ IP máy tính đang chạy Web 3D (Cổng 5000 của Backend)
+// LƯU Ý QUAN TRỌNG: Máy tính và ESP32 PHẢI kết nối chung vào 1 mạng Wi-Fi!
+// Mở cmd gõ `ipconfig` trên máy tính để kiểm tra IP Wi-Fi chính xác.
+const char* BACKEND_SERVER = "http://172.11.24.40:5000";
 
 // =========================================================================
 // 2. ĐỊNH NGHĨA CHÂN GPIO THIẾT BỊ VẬT LÝ
@@ -115,7 +118,7 @@ void sendToLocalTwin(const char* jsonPayload) {
     HTTPClient http;
     http.begin(String(BACKEND_SERVER) + "/api/telemetry");
     http.addHeader("Content-Type", "application/json");
-    http.setTimeout(500); // 500ms timeout an toàn, không bao giờ chặn luồng chính
+    http.setTimeout(400); // 400ms timeout an toàn, không bao giờ chặn luồng chính
     int httpCode = http.POST(jsonPayload);
     http.end();
   }
@@ -260,49 +263,49 @@ void checkPhysicalButtons() {
 
   bool changed = false;
 
-  // 1. Công tắc Phòng khách (GPIO 4)
+  // 1. Công tắc Phòng khách
   if (bLiving == LOW && lastLiving == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_LIVING) == LOW) {
       st_living = !st_living;
       digitalWrite(PIN_LED_LIVING, st_living ? HIGH : LOW);
-      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 4 (Phòng khách) -> %s\n", st_living ? "BẬT (HIGH)" : "TẮT (LOW)");
+      Serial.printf("[CÔNG TẮC BREADBOARD] Phòng khách -> %s\n", st_living ? "BẬT" : "TẮT");
       changed = true;
     }
   }
   lastLiving = bLiving;
 
-  // 2. Công tắc Phòng ngủ (GPIO 21)
+  // 2. Công tắc Phòng ngủ
   if (bBed == LOW && lastBed == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_BED) == LOW) {
       st_bed = !st_bed;
       digitalWrite(PIN_LED_BED, st_bed ? HIGH : LOW);
-      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 21 (Phòng ngủ) -> %s\n", st_bed ? "BẬT (HIGH)" : "TẮT (LOW)");
+      Serial.printf("[CÔNG TẮC BREADBOARD] Phòng ngủ -> %s\n", st_bed ? "BẬT" : "TẮT");
       changed = true;
     }
   }
   lastBed = bBed;
 
-  // 3. Công tắc Bếp (GPIO 22)
+  // 3. Công tắc Bếp
   if (bKit == LOW && lastKit == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_KIT) == LOW) {
       st_kit = !st_kit;
       digitalWrite(PIN_LED_KIT, st_kit ? HIGH : LOW);
-      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 22 (Bếp) -> %s\n", st_kit ? "BẬT (HIGH)" : "TẮT (LOW)");
+      Serial.printf("[CÔNG TẮC BREADBOARD] Bếp -> %s\n", st_kit ? "BẬT" : "TẮT");
       changed = true;
     }
   }
   lastKit = bKit;
 
-  // 4. Công tắc Ban công (GPIO 27)
+  // 4. Công tắc Ban công
   if (bBal == LOW && lastBal == HIGH) {
     delay(40);
     if (digitalRead(PIN_BTN_BAL) == LOW) {
       st_bal = !st_bal;
       digitalWrite(PIN_LED_BAL, st_bal ? HIGH : LOW);
-      Serial.printf(">> [NÚT NHẤN VẬT LÝ] GPIO 27 (Ban công) -> %s\n", st_bal ? "BẬT (HIGH)" : "TẮT (LOW)");
+      Serial.printf("[CÔNG TẮC BREADBOARD] Ban công -> %s\n", st_bal ? "BẬT" : "TẮT");
       changed = true;
     }
   }
@@ -314,11 +317,13 @@ void checkPhysicalButtons() {
 }
 
 // =========================================================================
-// 8. KẾT NỐI VÀ TÁI KẾT NỐI MQTT THINGSBOARD
+// 8. KẾT NỐI VÀ TÁI KẾT NỐI MQTT THINGSBOARD (NON-BLOCKING)
 // =========================================================================
 void reconnect() {
-  if (!client.connected()) {
+  if (!client.connected() && WiFi.status() == WL_CONNECTED) {
     Serial.print("Dang ket noi ThingsBoard...");
+    // Đặt socket timeout 1 giây để không làm đứng luồng
+    client.setSocketTimeout(1);
     if (client.connect("ESP32_SmartHome_Node", TB_TOKEN, NULL)) {
       Serial.println(" Thanh cong!");
       client.subscribe("v1/devices/me/rpc/request/+");
@@ -326,7 +331,7 @@ void reconnect() {
     } else {
       Serial.print(" That bai, rc=");
       Serial.print(client.state());
-      Serial.println(". Se thu lai o vong lap tiep theo...");
+      Serial.println(". Se thu lai o chu ky sau...");
     }
   }
 }
@@ -350,22 +355,19 @@ void setup() {
   pinMode(PIN_LED_BAL,      OUTPUT);
   pinMode(PIN_BUZZER_ALARM, OUTPUT);
 
-  // --- HARDWARE POWER-ON SELF-TEST (Kiểm tra phần cứng 4 LED) ---
-  Serial.println(">> [HARDWARE TEST] Dang sang 4 LED trong 600ms de kiem tra cuc LED...");
-  digitalWrite(PIN_LED_LIVING, HIGH);
-  digitalWrite(PIN_LED_BED,    HIGH);
-  digitalWrite(PIN_LED_KIT,    HIGH);
-  digitalWrite(PIN_LED_BAL,    HIGH);
-  delay(600);
-  digitalWrite(PIN_LED_LIVING, LOW);
-  digitalWrite(PIN_LED_BED,    LOW);
-  digitalWrite(PIN_LED_KIT,    LOW);
-  digitalWrite(PIN_LED_BAL,    LOW);
+  // Power-on self test chớp tắt 4 đèn để kiểm tra phần cứng
+  digitalWrite(PIN_LED_LIVING,   HIGH);
+  digitalWrite(PIN_LED_BED,      HIGH);
+  digitalWrite(PIN_LED_KIT,      HIGH);
+  digitalWrite(PIN_LED_BAL,      HIGH);
+  delay(300);
+  digitalWrite(PIN_LED_LIVING,   LOW);
+  digitalWrite(PIN_LED_BED,      LOW);
+  digitalWrite(PIN_LED_KIT,      LOW);
+  digitalWrite(PIN_LED_BAL,      LOW);
   digitalWrite(PIN_BUZZER_ALARM, LOW);
-  Serial.println(">> [HARDWARE TEST] 4 LED da tat! Neu khong thay 4 LED chop sang, vui long kiem tra chieu Anode/Cathode!");
 
   // 4 Công tắc cơ kích hoạt trở kéo lên nội (INPUT_PULLUP)
-  // LƯU Ý: Chân còn lại của nút nhấn PHẢI nối vào chân GND!
   pinMode(PIN_BTN_LIVING, INPUT_PULLUP);
   pinMode(PIN_BTN_BED,    INPUT_PULLUP);
   pinMode(PIN_BTN_KIT,    INPUT_PULLUP);
@@ -380,68 +382,81 @@ void setup() {
   #endif
   setFanSpeed(0);
 
-  // Kết nối Wi-Fi (với chẩn đoán thông minh)
-  Serial.printf("\n[WIFI] Dang ket noi WiFi: '%s'", WIFI_SSID);
+  // Kết nối Wi-Fi với chế độ STA rõ ràng
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+
+  Serial.printf("Dang ket noi WiFi: %s", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   int retryCount = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
     retryCount++;
-    if (retryCount % 24 == 0) { // Mỗi 12 giây cảnh báo nếu chưa kết nối
-      Serial.println("\n[!] Canh bao: Chưa vào được Wi-Fi. Kiem tra:");
-      Serial.println("  1. ESP32 chi ho tro bang tan 2.4GHz (khong bat duoc 5GHz).");
-      Serial.println("  2. Neu phat Hotspot tu iPhone: Bat 'Toi da hoa kha nang tuong thich'.");
-      Serial.println("  3. Neu phat tu Android: Chon bang tan '2.4 GHz AP Band'.");
-      Serial.println("  4. Tranh dat ten Wi-Fi co dau tieng Viet (nen dung chu khong dau, vd: 'MyWiFi').");
-      Serial.print("Dang tiep tuc ket noi");
+    if (retryCount > 40) { // Sau 20 giây nếu chưa vào được thì cảnh báo
+      Serial.println("\n[!] Canh bao: Khong the ket noi Wi-Fi!");
+      Serial.println("  1. Kiem tra bang tan Hotspot tren dien thoai: Bat buoc 2.4 GHz (ESP32 khong nhan 5 GHz).");
+      Serial.println("  2. Kiem tra mat khau co go dung chua.");
+      break;
     }
   }
-  Serial.println("\n>> WiFi da ket noi thanh cong!");
-  Serial.print(">> [ESP32 IP Address]: ");
-  Serial.println(WiFi.localIP());
 
-  // Khởi chạy HTTP WebServer nội bộ nhận lệnh từ 3D Web
-  localServer.on("/rpc", handleLocalRpc);
-  localServer.enableCORS(true);
-  localServer.begin();
-  Serial.println(">> [Local Server 3D] WebServer da khoi chay tren cong 80!");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n>> WiFi da ket noi!");
+    Serial.print(">> [ESP32 IP Address]: ");
+    Serial.println(WiFi.localIP());
 
-  // Cấu hình MQTT ThingsBoard
-  client.setServer(TB_SERVER, TB_PORT);
-  client.setCallback(onMqttMessage);
+    // Khởi chạy HTTP WebServer nội bộ nhận lệnh từ 3D Web
+    localServer.on("/rpc", handleLocalRpc);
+    localServer.enableCORS(true);
+    localServer.begin();
+    Serial.println(">> [Local Server 3D] WebServer da khoi chay tren cong 80!");
 
-  // Gửi gói Telemetry chào sân ban đầu
-  sendReadBackState();
+    // Cấu hình MQTT ThingsBoard
+    client.setServer(TB_SERVER, TB_PORT);
+    client.setCallback(onMqttMessage);
+    client.setSocketTimeout(1);
+
+    // Thử kết nối MQTT lần đầu
+    reconnect();
+
+    // Gửi gói Telemetry chào sân ban đầu
+    sendReadBackState();
+  } else {
+    Serial.println(">> ESP32 van tiep tuc chay offline de doc nut bam co va cam bien!");
+  }
 }
 
 // =========================================================================
 // 10. VÒNG LẶP CHÍNH (LOOP)
 // =========================================================================
 void loop() {
-  // 1. Duy trì kết nối ThingsBoard
-  if (!client.connected()) {
-    static unsigned long lastMqttRetry = 0;
-    if (millis() - lastMqttRetry > 5000) {
-      lastMqttRetry = millis();
-      reconnect();
+  // 1. Duy trì kết nối ThingsBoard nếu có Wi-Fi
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!client.connected()) {
+      static unsigned long lastMqttRetry = 0;
+      if (millis() - lastMqttRetry > 5000) {
+        lastMqttRetry = millis();
+        reconnect();
+      }
+    } else {
+      client.loop();
     }
-  } else {
-    client.loop();
+
+    // 2. Lắng nghe lệnh điều khiển siêu tốc từ 3D Web Twin
+    localServer.handleClient();
   }
 
-  // 2. Lắng nghe lệnh điều khiển siêu tốc từ 3D Web Twin
-  localServer.handleClient();
-
-  // 3. Quét trạng thái 4 công tắc cơ trên Breadboard
+  // 3. Quét trạng thái 4 công tắc cơ trên Breadboard (luôn hoạt động)
   checkPhysicalButtons();
 
   // 4. Định kỳ gửi Telemetry (mỗi 5 giây một lần)
   unsigned long now = millis();
   if (now - lastSend > 5000) {
     lastSend = now;
-    sendReadBackState();
+    if (WiFi.status() == WL_CONNECTED) {
+      sendReadBackState();
+    }
   }
 }
-

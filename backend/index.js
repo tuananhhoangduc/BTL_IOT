@@ -42,6 +42,8 @@ const twinState = {
     zone: null
   },
   health_score: 100,
+  severity: 'NORMAL',
+  status_message: 'Hệ thống hoạt động tối ưu',
   lastUpdate: Date.now()
 };
 
@@ -58,8 +60,15 @@ function broadcastTwinUpdate() {
   });
 }
 
-// Thuật toán đối soát sai lệch phần cứng (Actuator Mismatch Detection)
-function evaluateMismatch() {
+// =========================================================================
+// THUẬT TOÁN ĐÁNH GIÁ SỨC KHỎE DIGITAL TWIN H(t) & ĐỐI SOÁT VÒNG LẶP KÍN
+// Theo tiêu chuẩn kiến trúc Digital Twin IoT (Đề tài Giải Nhất)
+// =========================================================================
+function evaluateTwinHealth() {
+  const now = Date.now();
+  const timeSinceLastUpdate = now - (twinState.lastUpdate || 0);
+
+  // 1. Thuật toán đối soát sai lệch phần cứng (Actuator Mismatch Detection)
   const keys = ['light_living', 'light_bed', 'light_kitchen', 'light_balcony', 'fan_kitchen'];
   let isMismatch = false;
   let mismatchedRoom = null;
@@ -74,8 +83,68 @@ function evaluateMismatch() {
 
   twinState.mismatch.detected = isMismatch;
   twinState.mismatch.zone = mismatchedRoom;
-  twinState.health_score = isMismatch ? 60 : 100;
+
+  // 2. Tính điểm trừ (Penalties) theo công thức đa thông số: H(t) = 100 - Sum(Penalties)
+  let penalty = 0;
+  let highestSeverity = 'NORMAL';
+  const issues = [];
+
+  // a. Kiểm tra Kết nối mạng: Nếu quá 30 giây không nhận được Telemetry từ ESP32
+  if (timeSinceLastUpdate > 30000 && !twinState.reported.ip) {
+    twinState.health_score = 0;
+    twinState.severity = 'OFFLINE';
+    twinState.status_message = 'ESP32 mất kết nối (OFFLINE)';
+    return;
+  }
+
+  // b. Kiểm tra Nhiệt độ phòng (Temperature Rule):
+  const temp = Number(twinState.reported.temperature);
+  if (!isNaN(temp)) {
+    if (temp >= 35.0) {
+      // Nguy cơ hỏa hoạn / quá nhiệt nghiêm trọng: Trừ 90 điểm
+      penalty += 90;
+      highestSeverity = 'CRITICAL';
+      issues.push(`Nhiệt độ nguy hiểm (${temp.toFixed(1)}°C)`);
+    } else if (temp >= 31.0) {
+      // Cảnh báo nhiệt độ phòng cao: Trừ 40 điểm
+      penalty += 40;
+      if (highestSeverity !== 'CRITICAL') highestSeverity = 'MAJOR';
+      issues.push(`Nhiệt độ phòng tăng cao (${temp.toFixed(1)}°C)`);
+    }
+  }
+
+  // c. Kiểm tra Báo động cháy / Khói (Fire Alarm):
+  if (twinState.reported.fire_alarm) {
+    penalty += 90;
+    highestSeverity = 'CRITICAL';
+    issues.push('Kích hoạt còi báo động khẩn cấp');
+  }
+
+  // d. Kiểm tra Sai lệch vật lý (Actuator Mismatch - Lỗi điều khiển không khớp phản hồi):
+  if (isMismatch) {
+    penalty += 40;
+    if (highestSeverity === 'NORMAL') highestSeverity = 'WARNING';
+    const roomNames = {
+      light_living: 'Đèn Phòng khách',
+      light_bed: 'Đèn Phòng ngủ',
+      light_kitchen: 'Đèn Bếp',
+      light_balcony: 'Đèn Ban công',
+      fan_kitchen: 'Quạt Hút Bếp'
+    };
+    issues.push(`Lệch trạng thái ${roomNames[mismatchedRoom] || mismatchedRoom}`);
+  }
+
+  // Điểm sức khỏe H(t) giới hạn trong khoảng [0, 100]
+  twinState.health_score = Math.max(0, Math.min(100, 100 - penalty));
+  twinState.severity = highestSeverity;
+  twinState.status_message = issues.length > 0 ? issues.join(' • ') : 'Hệ thống hoạt động tối ưu';
 }
+
+// Kiểm tra định kỳ mỗi 5 giây để cập nhật trạng thái Offline và Sức khỏe
+setInterval(() => {
+  evaluateTwinHealth();
+  broadcastTwinUpdate();
+}, 5000);
 
 // API REST: Nhận lệnh điều khiển từ giao diện Web 3D và gửi trực tiếp tới ESP32
 app.post('/api/rpc', (req, res) => {
@@ -116,7 +185,7 @@ app.post('/api/rpc', (req, res) => {
     });
   }
 
-  evaluateMismatch();
+  evaluateTwinHealth();
   broadcastTwinUpdate();
   return res.json({ status: 'success', method, params });
 });
@@ -130,7 +199,7 @@ app.post('/api/telemetry', (req, res) => {
   }
   Object.assign(twinState.reported, req.body);
   twinState.lastUpdate = Date.now();
-  evaluateMismatch();
+  evaluateTwinHealth();
   broadcastTwinUpdate();
   res.json({ status: 'ok' });
 });
