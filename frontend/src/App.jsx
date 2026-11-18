@@ -4,14 +4,16 @@ import TwinHUD from './TwinHUD';
 
 // Bộ giải mã mã thời tiết WMO (World Meteorological Organization)
 export function parseWeatherCode(code, isDay, rain) {
-  if (rain > 0.5 || [61, 63, 65, 80, 81, 82].includes(code)) {
+  // Chỉ kích hoạt mưa rơi 3D khi có mưa thực sự đáng kể (rain >= 1.0mm hoặc mã mưa rào/giông bão)
+  if (rain >= 1.0 || [61, 63, 65, 80, 81, 82].includes(code)) {
     return { label: 'Mưa rào rải rác', isRaining: true, icon: '🌧️' };
   }
   if ([95, 96, 99].includes(code)) {
     return { label: 'Giông bão sấm sét', isRaining: true, icon: '⛈️' };
   }
-  if ([51, 53, 55, 56, 57].includes(code) || (rain > 0 && rain <= 0.5)) {
-    return { label: 'Mưa phùn nhẹ', isRaining: true, icon: '🌦️' };
+  // Mã 51-57 (mưa phùn li ti / độ ẩm cao) hoặc mưa nhỏ < 1.0mm: không bật mưa rào 3D để tránh sai lệch với thực tế nắng ráo
+  if ([51, 53, 55, 56, 57].includes(code) || (rain > 0 && rain < 1.0)) {
+    return { label: isDay ? 'Trời râm mát / Nắng nhẹ' : 'Đêm mây ẩm', isRaining: false, icon: isDay ? '⛅' : '☁️' };
   }
   if ([71, 73, 75, 77, 85, 86].includes(code)) {
     return { label: 'Mưa tuyết / lạnh giá', isRaining: false, icon: '❄️' };
